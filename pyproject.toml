@@ -1,0 +1,30 @@
+[project]
+name = "a-stock-mcp"
+version = "0.1.0"
+description = "A-share (China mainland) stock data MCP server for Claude Code, OpenClaw, and Hermes"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=3.2.0",
+    "pandas>=1.5",
+    "requests>=2.28",
+    "python-dateutil",
+    "mootdx>=0.10.0",
+    "stockstats>=0.6.0",
+]
+
+[project.scripts]
+a-stock-mcp = "a_stock_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# mootdx pins httpx<0.26 and pandas<2.0, conflicting with fastmcp (httpx>=0.28).
+# mootdx only uses httpx for TCP sockets, so newer httpx works fine.
+# Override both to satisfy fastmcp while keeping mootdx functional.
+[tool.uv]
+override-dependencies = [
+    "httpx>=0.28.1",
+    "pandas>=1.5",
+]
