@@ -14,21 +14,21 @@ Data sources:
 
 from __future__ import annotations
 
-from typing import Annotated
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
 import json as _json
-import os
 import logging
 import math
+import os
 import random
 import re as _re
 import time
-import uuid
 import urllib.request
+import uuid
+from datetime import datetime
+from typing import Annotated
 
 import pandas as pd
 import requests as _requests
+from dateutil.relativedelta import relativedelta
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +57,7 @@ def safe_ticker_component(value: str) -> str:
         raise ValueError(f"ticker cannot be all dots: {value!r}")
     if not _re.match(r"^[A-Za-z0-9._\-\^]+$", value):
         raise ValueError(
-            f"ticker contains unsafe characters: {value!r} "
-            "(only alphanumeric, dot, hyphen, underscore, caret allowed)"
+            f"ticker contains unsafe characters: {value!r} (only alphanumeric, dot, hyphen, underscore, caret allowed)"
         )
     return value
 
@@ -66,6 +65,7 @@ def safe_ticker_component(value: str) -> str:
 # ---------------------------------------------------------------------------
 # Helpers: ticker format & market detection
 # ---------------------------------------------------------------------------
+
 
 def _get_prefix(code: str) -> str:
     """6-digit A-stock code -> market prefix for Tencent API."""
@@ -161,10 +161,7 @@ def resolve_ticker(user_input: str) -> str:
     n2c, _ = _build_name_code_map()
 
     if not n2c:
-        raise ValueError(
-            f"无法解析中文股票名 '{s}'：mootdx 行情服务器连接失败，"
-            "请直接使用 6 位数字代码（如 600519）"
-        )
+        raise ValueError(f"无法解析中文股票名 '{s}'：mootdx 行情服务器连接失败，请直接使用 6 位数字代码（如 600519）")
 
     if clean in n2c:
         return n2c[clean]
@@ -244,6 +241,7 @@ def _require_mootdx(operation: str):
 # Tencent Finance API
 # ---------------------------------------------------------------------------
 
+
 def _tencent_quote(codes: list[str]) -> dict[str, dict]:
     """Batch real-time quotes from Tencent Finance (qt.gtimg.cn).
 
@@ -320,9 +318,7 @@ def _em_get(url, params=None, headers=None, timeout=15, **kwargs):
     if wait > 0:
         time.sleep(wait + random.uniform(0.1, 0.5))
     try:
-        return _EM_SESSION.get(
-            url, params=params, headers=headers, timeout=timeout, **kwargs
-        )
+        return _EM_SESSION.get(url, params=params, headers=headers, timeout=timeout, **kwargs)
     finally:
         _em_last_call[0] = time.time()
 
@@ -392,10 +388,7 @@ def _sina_kline_fallback(code: str, start_date: str = None, end_date: str = None
     Returns DataFrame with columns: Date, Open, High, Low, Close, Volume.
     """
     prefix = "sh" if code.startswith("6") else "sz"
-    url = (
-        "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-        "CN_MarketData.getKLineData"
-    )
+    url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
     params = {
         "symbol": f"{prefix}{code}",
         "scale": "240",  # daily
@@ -411,14 +404,16 @@ def _sina_kline_fallback(code: str, start_date: str = None, end_date: str = None
 
     rows = []
     for item in data:
-        rows.append({
-            "Date": item["day"],
-            "Open": float(item["open"]),
-            "High": float(item["high"]),
-            "Low": float(item["low"]),
-            "Close": float(item["close"]),
-            "Volume": int(item["volume"]),
-        })
+        rows.append(
+            {
+                "Date": item["day"],
+                "Open": float(item["open"]),
+                "High": float(item["high"]),
+                "Low": float(item["low"]),
+                "Close": float(item["close"]),
+                "Volume": int(item["volume"]),
+            }
+        )
 
     df = pd.DataFrame(rows)
     df["Date"] = pd.to_datetime(df["Date"])
@@ -434,6 +429,7 @@ def _sina_kline_fallback(code: str, start_date: str = None, end_date: str = None
 # ---------------------------------------------------------------------------
 # OHLCV loading with cache (mootdx -> CSV)
 # ---------------------------------------------------------------------------
+
 
 def _load_ohlcv_astock(symbol: str, curr_date: str) -> pd.DataFrame:
     """Fetch OHLCV via mootdx, cache to CSV, filter by curr_date.
@@ -484,9 +480,9 @@ def _load_ohlcv_astock(symbol: str, curr_date: str) -> pd.DataFrame:
         try:
             df = _sina_kline_fallback(code)
             if df.empty:
-                raise ValueError(f"No OHLCV data from sina for {code}")
-        except Exception:
-            raise ValueError(f"No OHLCV data from mootdx/sina for {code}")
+                raise ValueError(f"No OHLCV data from sina for {code}") from e
+        except Exception as err:
+            raise ValueError(f"No OHLCV data from mootdx/sina for {code}") from err
 
     # Cache to disk
     df.to_csv(cache_file, index=False, encoding="utf-8")
@@ -556,26 +552,19 @@ def get_stock_data(
     df = df[(df["Date"] >= start_dt) & (df["Date"] <= end_dt)]
 
     if df.empty:
-        return (
-            f"No data found for A-stock '{code}' "
-            f"between {start_date} and {end_date}"
-        )
+        return f"No data found for A-stock '{code}' between {start_date} and {end_date}"
 
     for col in ["Open", "High", "Low", "Close"]:
         if col in df.columns:
             df[col] = df[col].round(2)
 
     df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
-    csv_out = df[["Date", "Open", "High", "Low", "Close", "Volume"]].to_csv(
-        index=False
-    )
+    csv_out = df[["Date", "Open", "High", "Low", "Close", "Volume"]].to_csv(index=False)
 
     header = f"# Stock data for {code} (A-stock) from {start_date} to {end_date}\n"
     header += f"# Total records: {len(df)}\n"
     header += f"# Data source: {data_source}\n"
-    header += (
-        f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    )
+    header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
     return header + csv_out
 
@@ -602,9 +591,7 @@ _INDICATOR_DESCRIPTIONS = {
 
 def get_indicators(
     symbol: Annotated[str, "A-stock code"],
-    indicator: Annotated[
-        str, "technical indicator (e.g. rsi, macd, close_50_sma)"
-    ],
+    indicator: Annotated[str, "technical indicator (e.g. rsi, macd, close_50_sma)"],
     curr_date: Annotated[str, "Current trading date, YYYY-mm-dd"],
     look_back_days: Annotated[int, "how many days to look back"],
 ) -> str:
@@ -614,10 +601,7 @@ def get_indicators(
     code = _normalize_ticker(symbol)
 
     if indicator not in _INDICATOR_DESCRIPTIONS:
-        raise ValueError(
-            f"Indicator {indicator} not supported. "
-            f"Choose from: {list(_INDICATOR_DESCRIPTIONS.keys())}"
-        )
+        raise ValueError(f"Indicator {indicator} not supported. Choose from: {list(_INDICATOR_DESCRIPTIONS.keys())}")
 
     try:
         data = _load_ohlcv_astock(code, curr_date)
@@ -699,9 +683,7 @@ def get_fundamentals(
         try:
             client = _get_mootdx_client()
             fin = client.finance(symbol=code)
-            if fin is not None and not (
-                isinstance(fin, pd.DataFrame) and fin.empty
-            ):
+            if fin is not None and not (isinstance(fin, pd.DataFrame) and fin.empty):
                 row = fin.iloc[0] if isinstance(fin, pd.DataFrame) else fin
                 field_map = {
                     "eps": "EPS (Quarterly)",
@@ -769,10 +751,7 @@ def get_fundamentals(
                         count = int(count_val)
                     except (ValueError, TypeError):
                         count = 0
-                    lines.append(
-                        f"FY{year}: EPS={mean_eps} "
-                        f"(range {min_eps_val}~{max_eps_val}, {count} analysts)"
-                    )
+                    lines.append(f"FY{year}: EPS={mean_eps} (range {min_eps_val}~{max_eps_val}, {count} analysts)")
                     if count < 3:
                         lines.append("  Warning: low coverage (<3 analysts)")
                     eps_by_year[year] = mean_eps
@@ -787,35 +766,21 @@ def get_fundamentals(
                             eps_cur = eps_by_year[years_sorted[0]]
                             fwd_pe = price / eps_cur
                             lines.append(
-                                f"\nForward PE (FY{years_sorted[0]}): "
-                                f"{fwd_pe:.1f}x (price={price}, EPS={eps_cur})"
+                                f"\nForward PE (FY{years_sorted[0]}): {fwd_pe:.1f}x (price={price}, EPS={eps_cur})"
                             )
-                            if (
-                                len(years_sorted) >= 2
-                                and eps_by_year.get(years_sorted[1], 0) > 0
-                            ):
+                            if len(years_sorted) >= 2 and eps_by_year.get(years_sorted[1], 0) > 0:
                                 eps_next = eps_by_year[years_sorted[1]]
                                 cagr = eps_next / eps_cur - 1
                                 if cagr > 0:
                                     peg = fwd_pe / (cagr * 100)
-                                    lines.append(
-                                        f"PEG: {peg:.2f} "
-                                        f"(EPS CAGR={cagr * 100:.0f}%)"
-                                    )
+                                    lines.append(f"PEG: {peg:.2f} (EPS CAGR={cagr * 100:.0f}%)")
                                     if fwd_pe > 30:
-                                        digest = math.log(fwd_pe / 30) / math.log(
-                                            1 + cagr
-                                        )
-                                        lines.append(
-                                            f"PE Digestion to 30x: {digest:.1f} years"
-                                        )
+                                        digest = math.log(fwd_pe / 30) / math.log(1 + cagr)
+                                        lines.append(f"PE Digestion to 30x: {digest:.1f} years")
                                     else:
                                         lines.append("PE already below 30x target")
                                 else:
-                                    lines.append(
-                                        f"EPS declining ({cagr * 100:.0f}%), "
-                                        f"PEG not applicable"
-                                    )
+                                    lines.append(f"EPS declining ({cagr * 100:.0f}%), PEG not applicable")
                 except Exception as e:
                     logger.warning("Forward PE calc failed for %s: %s", code, e)
         except Exception as e:
@@ -825,9 +790,7 @@ def get_fundamentals(
             return f"No fundamentals data found for A-stock '{code}'"
 
         header = f"# Company Fundamentals for {code} (A-stock)\n"
-        header += (
-            f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
         return header + "\n".join(lines)
 
@@ -844,7 +807,10 @@ def _sina_stock_code(code: str) -> str:
 
 
 def _get_financial_report_sina(
-    code: str, report_type: str, freq: str, curr_date: str = None,
+    code: str,
+    report_type: str,
+    freq: str,
+    curr_date: str = None,
 ) -> pd.DataFrame:
     """Shared helper: fetch financial report via Sina direct HTTP API.
 
@@ -909,9 +875,7 @@ def get_balance_sheet(
 
         header = f"# Balance Sheet for {code} (A-stock, {freq})\n"
         header += "# Data source: sina direct HTTP\n"
-        header += (
-            f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
         return header + csv_string
 
@@ -940,9 +904,7 @@ def get_cashflow(
 
         header = f"# Cash Flow for {code} (A-stock, {freq})\n"
         header += "# Data source: sina direct HTTP\n"
-        header += (
-            f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
         return header + csv_string
 
@@ -971,9 +933,7 @@ def get_income_statement(
 
         header = f"# Income Statement for {code} (A-stock, {freq})\n"
         header += "# Data source: sina direct HTTP\n"
-        header += (
-            f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
         return header + csv_string
 
@@ -1026,23 +986,22 @@ def _fetch_news_eastmoney(code: str, page_size: int = 20) -> list[dict]:
 
     articles: list[dict] = []
     for item in data.get("result", {}).get("cmsArticleWebOld", []):
-        articles.append({
-            "title": item.get("title", ""),
-            "content": item.get("content", ""),
-            "time": item.get("date", ""),
-            "source": item.get("mediaName", "东方财富"),
-            "url": item.get("url", ""),
-        })
+        articles.append(
+            {
+                "title": item.get("title", ""),
+                "content": item.get("content", ""),
+                "time": item.get("date", ""),
+                "source": item.get("mediaName", "东方财富"),
+                "url": item.get("url", ""),
+            }
+        )
     return articles
 
 
 def _fetch_news_sina(code: str, page_size: int = 20) -> list[dict]:
     """Sina Finance stock news API (backup source)."""
     prefix = "sh" if code.startswith(("6", "9")) else "sz"
-    url = (
-        f"https://vip.stock.finance.sina.com.cn/corp/view/"
-        f"vCB_AllNewsStock.php?symbol={prefix}{code}&Page=1"
-    )
+    url = f"https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllNewsStock.php?symbol={prefix}{code}&Page=1"
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -1063,13 +1022,15 @@ def _fetch_news_sina(code: str, page_size: int = 20) -> list[dict]:
         html,
     )
     for date_str, time_str, link, title in rows[:page_size]:
-        articles.append({
-            "title": title.strip(),
-            "content": "",
-            "time": f"{date_str} {time_str}",
-            "source": "新浪财经",
-            "url": link,
-        })
+        articles.append(
+            {
+                "title": title.strip(),
+                "content": "",
+                "time": f"{date_str} {time_str}",
+                "source": "新浪财经",
+                "url": link,
+            }
+        )
     return articles
 
 
@@ -1129,15 +1090,9 @@ def get_news(
         count += 1
 
     if count == 0:
-        return (
-            f"No news found for A-stock '{code}' "
-            f"between {start_date} and {end_date}"
-        )
+        return f"No news found for A-stock '{code}' between {start_date} and {end_date}"
 
-    return (
-        f"## {code} (A-stock) News, from {start_date} to {end_date}:\n\n"
-        + news_str
-    )
+    return f"## {code} (A-stock) News, from {start_date} to {end_date}:\n\n" + news_str
 
 
 # ---- 8. get_global_news ----
@@ -1149,9 +1104,7 @@ def get_global_news(
     limit: Annotated[int, "Max articles"] = 10,
 ) -> str:
     """Get China/global financial news via direct HTTP (CLS + Eastmoney)."""
-    start_dt = datetime.strptime(curr_date, "%Y-%m-%d") - relativedelta(
-        days=look_back_days
-    )
+    start_dt = datetime.strptime(curr_date, "%Y-%m-%d") - relativedelta(days=look_back_days)
     start_date = start_dt.strftime("%Y-%m-%d")
 
     all_news: list[dict] = []
@@ -1174,12 +1127,14 @@ def get_global_news(
                     pub_time = datetime.fromtimestamp(int(ctime)).strftime("%Y-%m-%d %H:%M")
                 except (ValueError, TypeError, OSError):
                     pub_time = str(ctime)
-            all_news.append({
-                "title": title,
-                "content": content,
-                "time": pub_time,
-                "source": "CLS Wire",
-            })
+            all_news.append(
+                {
+                    "title": title,
+                    "content": content,
+                    "time": pub_time,
+                    "source": "CLS Wire",
+                }
+            )
     except Exception as e:
         logger.warning("CLS news fetch failed: %s", e)
 
@@ -1201,12 +1156,14 @@ def get_global_news(
             title = item.get("title", "")
             summary = item.get("summary", "")[:200]
             pub_time = item.get("showTime", "")
-            all_news.append({
-                "title": title,
-                "content": summary,
-                "time": pub_time,
-                "source": "Eastmoney Global",
-            })
+            all_news.append(
+                {
+                    "title": title,
+                    "content": summary,
+                    "time": pub_time,
+                    "source": "Eastmoney Global",
+                }
+            )
     except Exception as e:
         logger.warning("Eastmoney global news fetch failed: %s", e)
 
@@ -1225,18 +1182,11 @@ def get_global_news(
     for n in unique[:limit]:
         news_str += f"### {n['title']} (source: {n['source']})\n"
         if n.get("content"):
-            snippet = (
-                n["content"][:300] + "..."
-                if len(n["content"]) > 300
-                else n["content"]
-            )
+            snippet = n["content"][:300] + "..." if len(n["content"]) > 300 else n["content"]
             news_str += f"{snippet}\n"
         news_str += "\n"
 
-    return (
-        f"## China & Global Market News, from {start_date} to {curr_date}:\n\n"
-        + news_str
-    )
+    return f"## China & Global Market News, from {start_date} to {curr_date}:\n\n" + news_str
 
 
 # ---- 9. get_insider_transactions ----
@@ -1262,9 +1212,7 @@ def get_insider_transactions(
         header = f"# Shareholder Research for {code} (A-stock)\n"
         header += "# Note: A-stock equivalent of insider transactions\n"
         header += "# Data source: mootdx F10\n"
-        header += (
-            f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
         import re
 
@@ -1276,8 +1224,7 @@ def get_insider_transactions(
             cut_at = 2000
             if len(sec4_text) > cut_at:
                 sec4_text = (
-                    sec4_text[:cut_at]
-                    + "\n\n(... older shareholder history omitted, "
+                    sec4_text[:cut_at] + "\n\n(... older shareholder history omitted, "
                     f"{len(text) - sec4_pos - cut_at} chars truncated ...)"
                 )
             text = before_sec4 + sec4_text
@@ -1306,7 +1253,7 @@ def get_profit_forecast(
 
         lines = [
             f"# Consensus EPS Forecast for {code} (A-stock)",
-            f"# Source: 同花顺 analyst consensus (direct HTTP)",
+            "# Source: 同花顺 analyst consensus (direct HTTP)",
             f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
         ]
@@ -1326,10 +1273,7 @@ def get_profit_forecast(
                 mean_eps = float(mean_eps_val)
             except (ValueError, TypeError):
                 mean_eps = 0
-            lines.append(
-                f"FY{year}: EPS={mean_eps} (range {min_eps_val}~{max_eps_val}), "
-                f"analysts={count}"
-            )
+            lines.append(f"FY{year}: EPS={mean_eps} (range {min_eps_val}~{max_eps_val}), analysts={count}")
             if count < 3:
                 lines.append("  Warning: low coverage (<3 analysts)")
             eps_by_year[year] = mean_eps
@@ -1346,32 +1290,18 @@ def get_profit_forecast(
                 if years_sorted and eps_by_year.get(years_sorted[0], 0) > 0:
                     eps_cur = eps_by_year[years_sorted[0]]
                     fwd_pe = price / eps_cur
-                    lines.append(
-                        f"Forward PE (FY{years_sorted[0]}): {fwd_pe:.1f}x"
-                    )
-                    if (
-                        len(years_sorted) >= 2
-                        and eps_by_year.get(years_sorted[1], 0) > 0
-                    ):
+                    lines.append(f"Forward PE (FY{years_sorted[0]}): {fwd_pe:.1f}x")
+                    if len(years_sorted) >= 2 and eps_by_year.get(years_sorted[1], 0) > 0:
                         eps_next = eps_by_year[years_sorted[1]]
                         cagr = eps_next / eps_cur - 1
                         if cagr > 0:
                             peg = fwd_pe / (cagr * 100)
-                            lines.append(
-                                f"PEG: {peg:.2f} (CAGR={cagr * 100:.0f}%)"
-                            )
+                            lines.append(f"PEG: {peg:.2f} (CAGR={cagr * 100:.0f}%)")
                             if fwd_pe > 30:
-                                digest = math.log(fwd_pe / 30) / math.log(
-                                    1 + cagr
-                                )
-                                lines.append(
-                                    f"PE Digestion to 30x: {digest:.1f} years"
-                                )
+                                digest = math.log(fwd_pe / 30) / math.log(1 + cagr)
+                                lines.append(f"PE Digestion to 30x: {digest:.1f} years")
                         else:
-                            lines.append(
-                                f"EPS declining ({cagr * 100:.0f}%), "
-                                f"PEG not applicable"
-                            )
+                            lines.append(f"EPS declining ({cagr * 100:.0f}%), PEG not applicable")
         except Exception as e:
             logger.warning("Forward PE calc failed for %s: %s", code, e)
 
@@ -1398,16 +1328,8 @@ def get_hot_stocks(
         curr_date = datetime.now().strftime("%Y-%m-%d")
 
     try:
-        url = (
-            f"http://zx.10jqka.com.cn/event/api/getharden/"
-            f"date/{curr_date}/orderby/date/orderway/desc/charset/GBK/"
-        )
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "Chrome/117.0.0.0 Safari/537.36"
-            )
-        }
+        url = f"http://zx.10jqka.com.cn/event/api/getharden/date/{curr_date}/orderby/date/orderway/desc/charset/GBK/"
+        headers = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/117.0.0.0 Safari/537.36")}
         r = requests.get(url, headers=headers, timeout=10)
         data = r.json()
 
@@ -1416,14 +1338,11 @@ def get_hot_stocks(
 
         rows = data.get("data") or []
         if not rows:
-            return (
-                f"No hot stocks data for {curr_date} "
-                f"(may be non-trading day or data not yet available)"
-            )
+            return f"No hot stocks data for {curr_date} (may be non-trading day or data not yet available)"
 
         lines = [
             f"# Hot Stocks with Topic Attribution ({curr_date})",
-            f"# Source: 同花顺 editorial (human-curated reason tags)",
+            "# Source: 同花顺 editorial (human-curated reason tags)",
             f"# Total: {len(rows)} stocks",
             "",
         ]
@@ -1441,11 +1360,7 @@ def get_hot_stocks(
             chengjiaoe = row.get("chengjiaoe", "")
             dde = row.get("ddejingliang", "")
 
-            lines.append(
-                f"{code} {name}: +{zhangfu}% "
-                f"换手{huanshou}% 成交额{chengjiaoe} "
-                f"大单净量{dde} | {reason}"
-            )
+            lines.append(f"{code} {name}: +{zhangfu}% 换手{huanshou}% 成交额{chengjiaoe} 大单净量{dde} | {reason}")
 
             if reason:
                 tags = [t.strip() for t in str(reason).split("+") if t.strip()]
@@ -1453,7 +1368,7 @@ def get_hot_stocks(
 
         if all_tags:
             cnt = Counter(all_tags)
-            lines.append(f"\n## Theme Frequency (top 15)")
+            lines.append("\n## Theme Frequency (top 15)")
             for tag, n in cnt.most_common(15):
                 lines.append(f"  {tag}: {n} stocks")
 
@@ -1480,7 +1395,7 @@ def _save_northbound_snapshot(date_str: str, hgt: float, sgt: float) -> None:
     path = _northbound_cache_path()
     existing: dict[str, tuple[str, str]] = {}
     if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             reader = csv.reader(f)
             next(reader, None)
             for row in reader:
@@ -1503,7 +1418,7 @@ def _load_northbound_history(n: int = 20) -> list[tuple[str, float, float]]:
     if not os.path.exists(path):
         return []
     rows: list[tuple[str, float, float]] = []
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         reader = csv.reader(f)
         next(reader, None)
         for row in reader:
@@ -1517,9 +1432,7 @@ def _load_northbound_history(n: int = 20) -> list[tuple[str, float, float]]:
 
 def get_northbound_flow(
     curr_date: Annotated[str, "Date YYYY-MM-DD"],
-    include_history: Annotated[
-        bool, "Include historical daily data (last 20 trading days)"
-    ] = False,
+    include_history: Annotated[bool, "Include historical daily data (last 20 trading days)"] = False,
 ) -> str:
     """Get northbound capital flow (沪深股通) from 同花顺 hsgtApi.
 
@@ -1530,10 +1443,7 @@ def get_northbound_flow(
     import requests
 
     hsgt_headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "Chrome/117.0.0.0 Safari/537.36"
-        ),
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/117.0.0.0 Safari/537.36"),
         "Host": "data.hexin.cn",
         "Referer": "https://data.hexin.cn/",
     }
@@ -1570,11 +1480,7 @@ def get_northbound_flow(
             hgt_close = float(hgt[-1]) if hgt else 0
             sgt_close = float(sgt[-1]) if sgt else 0
             total = hgt_close + sgt_close
-            lines.append(
-                f"\nClose: HGT(沪股通)={hgt_close:.2f}亿 "
-                f"SGT(深股通)={sgt_close:.2f}亿 "
-                f"Total={total:.2f}亿"
-            )
+            lines.append(f"\nClose: HGT(沪股通)={hgt_close:.2f}亿 SGT(深股通)={sgt_close:.2f}亿 Total={total:.2f}亿")
             if total > 0:
                 lines.append("Signal: Net northbound INFLOW (bullish)")
             elif total < 0:
@@ -1595,9 +1501,7 @@ def get_northbound_flow(
                 for date, h, s in history:
                     lines.append(f"  {date}: HGT={h:.2f} SGT={s:.2f} Total={h + s:.2f}")
                 avg_total = sum(h + s for _, h, s in history) / len(history)
-                lines.append(
-                    f"\n{len(history)}-day avg net flow: {avg_total:.2f}亿"
-                )
+                lines.append(f"\n{len(history)}-day avg net flow: {avg_total:.2f}亿")
                 if got_realtime:
                     today_total = hgt_close + sgt_close
                     diff = today_total - avg_total
@@ -1607,8 +1511,7 @@ def get_northbound_flow(
                     )
             else:
                 lines.append(
-                    "\n## Historical Daily: No cached data yet. "
-                    "History accumulates automatically with each call."
+                    "\n## Historical Daily: No cached data yet. History accumulates automatically with each call."
                 )
 
         return "\n".join(lines)
@@ -1623,10 +1526,7 @@ def get_northbound_flow(
 
 _BAIDU_PAE_HEADERS = {
     "Host": "finance.pae.baidu.com",
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) "
-        "Gecko/20100101 Firefox/110.0"
-    ),
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/110.0"),
     "Accept": "application/vnd.finance-web.v1+json",
     "Origin": "https://gushitong.baidu.com",
     "Referer": "https://gushitong.baidu.com/",
@@ -1658,10 +1558,7 @@ def get_concept_blocks(
         d = r.json()
 
         if str(d.get("ResultCode", -1)) != "0":
-            return (
-                f"Baidu PAE error: ResultCode={d.get('ResultCode')} "
-                f"{d.get('ResultMsg', '')}"
-            )
+            return f"Baidu PAE error: ResultCode={d.get('ResultCode')} {d.get('ResultMsg', '')}"
 
         result = d.get("Result", {})
         categories = result.get(code, [])
@@ -1670,7 +1567,7 @@ def get_concept_blocks(
 
         lines = [
             f"# Concept & Sector Blocks for {code} (A-stock)",
-            f"# Source: 百度股市通 (Baidu PAE)",
+            "# Source: 百度股市通 (Baidu PAE)",
             f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
         ]
@@ -1707,9 +1604,7 @@ def get_concept_blocks(
 def get_fund_flow(
     ticker: Annotated[str, "A-stock code"],
     curr_date: Annotated[str, "Date YYYY-MM-DD"],
-    include_history: Annotated[
-        bool, "Include historical daily fund flow (last 20 days)"
-    ] = True,
+    include_history: Annotated[bool, "Include historical daily fund flow (last 20 days)"] = True,
 ) -> str:
     """Get individual stock fund flow from 东财 push2.
 
@@ -1723,7 +1618,7 @@ def get_fund_flow(
     secid = f"1.{code}" if code.startswith("6") else f"0.{code}"
     lines = [
         f"# Fund Flow for {code} (A-stock)",
-        f"# Source: 东财 push2 (Eastmoney)",
+        "# Source: 东财 push2 (Eastmoney)",
         f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
     ]
@@ -1732,7 +1627,8 @@ def get_fund_flow(
         # Realtime minute-level fund flow
         url_rt = "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get"
         params_rt = {
-            "secid": secid, "klt": 1,
+            "secid": secid,
+            "klt": 1,
             "fields1": "f1,f2,f3,f7",
             "fields2": "f51,f52,f53,f54,f55,f56,f57",
         }
@@ -1741,47 +1637,35 @@ def get_fund_flow(
         klines = d.get("data", {}).get("klines", [])
 
         if klines:
-            lines.append(
-                "## Realtime Minute Flow "
-                "(主力/小单/中单/大单/超大单 净流入, 元)"
-            )
+            lines.append("## Realtime Minute Flow (主力/小单/中单/大单/超大单 净流入, 元)")
             for line in klines[-10:]:
                 parts = line.split(",")
                 if len(parts) >= 6:
                     lines.append(
                         f"  {parts[0]}: "
-                        f"主力={float(parts[1])/1e4:.0f}万 "
-                        f"大单={float(parts[4])/1e4:.0f}万 "
-                        f"超大单={float(parts[5])/1e4:.0f}万"
+                        f"主力={float(parts[1]) / 1e4:.0f}万 "
+                        f"大单={float(parts[4]) / 1e4:.0f}万 "
+                        f"超大单={float(parts[5]) / 1e4:.0f}万"
                     )
 
             last_parts = klines[-1].split(",")
             if len(last_parts) >= 2:
                 main_net = float(last_parts[1])
-                lines.append(
-                    f"\nClose: 主力净流入={main_net/1e4:.0f}万元"
-                )
+                lines.append(f"\nClose: 主力净流入={main_net / 1e4:.0f}万元")
                 if main_net > 0:
-                    lines.append(
-                        "Signal: Net main force INFLOW (bullish)"
-                    )
+                    lines.append("Signal: Net main force INFLOW (bullish)")
                 elif main_net < 0:
-                    lines.append(
-                        "Signal: Net main force OUTFLOW (bearish)"
-                    )
+                    lines.append("Signal: Net main force OUTFLOW (bearish)")
         else:
-            lines.append(
-                "No realtime fund flow (non-trading hours or holiday)"
-            )
+            lines.append("No realtime fund flow (non-trading hours or holiday)")
 
         # Historical daily fund flow (push2his)
         if include_history:
-            url_hist = (
-                "https://push2his.eastmoney.com"
-                "/api/qt/stock/fflow/daykline/get"
-            )
+            url_hist = "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get"
             params_hist = {
-                "secid": secid, "lmt": 20, "klt": 101,
+                "secid": secid,
+                "lmt": 20,
+                "klt": 101,
                 "fields1": "f1,f2,f3,f7",
                 "fields2": "f51,f52,f53,f54,f55,f56,f57",
             }
@@ -1790,24 +1674,18 @@ def get_fund_flow(
             hist_klines = dh.get("data", {}).get("klines", [])
 
             if hist_klines:
-                lines.append(
-                    f"\n## Historical Daily Fund Flow "
-                    f"(last {len(hist_klines)} trading days)"
-                )
-                lines.append(
-                    "Date | 主力净流入(万) | 大单(万) "
-                    "| 中单(万) | 小单(万) | 超大单(万)"
-                )
+                lines.append(f"\n## Historical Daily Fund Flow (last {len(hist_klines)} trading days)")
+                lines.append("Date | 主力净流入(万) | 大单(万) | 中单(万) | 小单(万) | 超大单(万)")
                 for line in hist_klines:
                     parts = line.split(",")
                     if len(parts) >= 6:
                         lines.append(
                             f"  {parts[0]} "
-                            f"| main={float(parts[1])/1e4:.0f} "
-                            f"| large={float(parts[4])/1e4:.0f} "
-                            f"| mid={float(parts[3])/1e4:.0f} "
-                            f"| small={float(parts[2])/1e4:.0f} "
-                            f"| super={float(parts[5])/1e4:.0f}"
+                            f"| main={float(parts[1]) / 1e4:.0f} "
+                            f"| large={float(parts[4]) / 1e4:.0f} "
+                            f"| mid={float(parts[3]) / 1e4:.0f} "
+                            f"| small={float(parts[2]) / 1e4:.0f} "
+                            f"| super={float(parts[5]) / 1e4:.0f}"
                         )
 
         return "\n".join(lines)
@@ -1819,6 +1697,7 @@ def get_fund_flow(
 # ---------------------------------------------------------------------------
 # 15. Dragon Tiger Board (龙虎榜)
 # ---------------------------------------------------------------------------
+
 
 def get_dragon_tiger_board(
     ticker: str,
@@ -1846,11 +1725,7 @@ def get_dragon_tiger_board(
     try:
         data = _eastmoney_datacenter(
             "RPT_DAILYBILLBOARD_DETAILSNEW",
-            filter_str=(
-                f"(TRADE_DATE>='{start_date_str}')"
-                f"(TRADE_DATE<='{trade_date}')"
-                f"(SECURITY_CODE=\"{code}\")"
-            ),
+            filter_str=(f"(TRADE_DATE>='{start_date_str}')(TRADE_DATE<='{trade_date}')(SECURITY_CODE=\"{code}\")"),
             page_size=50,
             sort_columns="TRADE_DATE",
             sort_types="-1",
@@ -1893,10 +1768,7 @@ def get_dragon_tiger_board(
                     buy_amt = round((row.get("BUY") or 0) / 10000, 1)
                     sell_amt = round((row.get("SELL") or 0) / 10000, 1)
                     net = round((row.get("NET") or 0) / 10000, 1)
-                    lines.append(
-                        f"  {row.get('OPERATEDEPT_NAME', '')} "
-                        f"| {buy_amt:.0f} | {sell_amt:.0f} | {net:.0f}"
-                    )
+                    lines.append(f"  {row.get('OPERATEDEPT_NAME', '')} | {buy_amt:.0f} | {sell_amt:.0f} | {net:.0f}")
 
             # 卖出席位
             sell_data = _eastmoney_datacenter(
@@ -1913,10 +1785,7 @@ def get_dragon_tiger_board(
                     buy_amt = round((row.get("BUY") or 0) / 10000, 1)
                     sell_amt = round((row.get("SELL") or 0) / 10000, 1)
                     net = round((row.get("NET") or 0) / 10000, 1)
-                    lines.append(
-                        f"  {row.get('OPERATEDEPT_NAME', '')} "
-                        f"| {buy_amt:.0f} | {sell_amt:.0f} | {net:.0f}"
-                    )
+                    lines.append(f"  {row.get('OPERATEDEPT_NAME', '')} | {buy_amt:.0f} | {sell_amt:.0f} | {net:.0f}")
     except Exception:
         pass
 
@@ -1925,18 +1794,18 @@ def get_dragon_tiger_board(
         inst_buy = 0.0
         inst_sell = 0.0
         for detail, side in [(buy_data, "buy"), (sell_data, "sell")]:
-            for row in (detail or []):
+            for row in detail or []:
                 if str(row.get("OPERATEDEPT_CODE", "")) == "0":
                     if side == "buy":
-                        inst_buy += (row.get("BUY") or 0)
+                        inst_buy += row.get("BUY") or 0
                     else:
-                        inst_sell += (row.get("SELL") or 0)
+                        inst_sell += row.get("SELL") or 0
         if inst_buy > 0 or inst_sell > 0:
             lines.append("\n## 机构动向")
             lines.append(
-                f"  机构买入 {inst_buy/1e4:.0f} 万 "
-                f"| 卖出 {inst_sell/1e4:.0f} 万 "
-                f"| 净额 {(inst_buy - inst_sell)/1e4:.0f} 万"
+                f"  机构买入 {inst_buy / 1e4:.0f} 万 "
+                f"| 卖出 {inst_sell / 1e4:.0f} 万 "
+                f"| 净额 {(inst_buy - inst_sell) / 1e4:.0f} 万"
             )
     except Exception:
         pass
@@ -1947,6 +1816,7 @@ def get_dragon_tiger_board(
 # ---------------------------------------------------------------------------
 # 16. Lockup Expiry Calendar (限售解禁日历)
 # ---------------------------------------------------------------------------
+
 
 def get_lockup_expiry(
     ticker: str,
@@ -1971,7 +1841,7 @@ def get_lockup_expiry(
     try:
         history_data = _eastmoney_datacenter(
             "RPT_LIFT_STAGE",
-            filter_str=f"(SECURITY_CODE=\"{code}\")",
+            filter_str=f'(SECURITY_CODE="{code}")',
             page_size=15,
             sort_columns="FREE_DATE",
             sort_types="-1",
@@ -1993,17 +1863,11 @@ def get_lockup_expiry(
 
     # 2. 未来待解禁 — eastmoney datacenter direct HTTP
     try:
-        end_dt = datetime.strptime(trade_date, "%Y-%m-%d") + pd.Timedelta(
-            days=forward_days
-        )
+        end_dt = datetime.strptime(trade_date, "%Y-%m-%d") + pd.Timedelta(days=forward_days)
         end_str = end_dt.strftime("%Y-%m-%d")
         upcoming_data = _eastmoney_datacenter(
             "RPT_LIFT_STAGE",
-            filter_str=(
-                f"(SECURITY_CODE=\"{code}\")"
-                f"(FREE_DATE>='{trade_date}')"
-                f"(FREE_DATE<='{end_str}')"
-            ),
+            filter_str=(f"(SECURITY_CODE=\"{code}\")(FREE_DATE>='{trade_date}')(FREE_DATE<='{end_str}')"),
             page_size=20,
             sort_columns="FREE_DATE",
             sort_types="1",
@@ -2028,6 +1892,7 @@ def get_lockup_expiry(
 # ---------------------------------------------------------------------------
 # 17. Industry Comparison (行业横向对比)
 # ---------------------------------------------------------------------------
+
 
 def get_industry_comparison(
     ticker: str,
@@ -2066,25 +1931,15 @@ def get_industry_comparison(
         items = d.get("data", {}).get("diff", [])
 
         if items:
-            lines.append(
-                f"\n## 全行业表现 (东财 {len(items)} 个行业)"
-            )
-            lines.append(
-                "排名 | 行业 | 涨跌幅 | 上涨 | 下跌 | 领涨股"
-            )
+            lines.append(f"\n## 全行业表现 (东财 {len(items)} 个行业)")
+            lines.append("排名 | 行业 | 涨跌幅 | 上涨 | 下跌 | 领涨股")
             for i, item in enumerate(items):
                 name = item.get("f14", "")
                 change_pct = item.get("f3", 0)
                 up_count = item.get("f104", 0)
                 down_count = item.get("f105", 0)
                 leader = item.get("f140", "")
-                lines.append(
-                    f"  {i+1}. {name} "
-                    f"| {change_pct}% "
-                    f"| {up_count} "
-                    f"| {down_count} "
-                    f"| {leader}"
-                )
+                lines.append(f"  {i + 1}. {name} | {change_pct}% | {up_count} | {down_count} | {leader}")
                 if i >= top_n * 2 - 1:
                     lines.append(f"  ... (showing top/bottom {top_n})")
                     break

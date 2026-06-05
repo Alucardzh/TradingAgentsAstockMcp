@@ -6,9 +6,6 @@ Compatible with Claude Code, OpenClaw, and Hermes.
 Usage:
     # Start as stdio MCP server
     uv run python -m a_stock_mcp.server
-
-    # Register with Claude Code:
-    claude mcp add a-stock-data -- uv run --project D:/DevProject/TradingAgentTokenPlan/a-stock-mcp python -m a_stock_mcp.server
 """
 
 from __future__ import annotations
@@ -16,28 +13,62 @@ from __future__ import annotations
 import functools
 import inspect
 
+from fastmcp import FastMCP
+
+from a_stock_mcp.data import (
+    get_balance_sheet as _get_balance_sheet,
+)
+from a_stock_mcp.data import (
+    get_cashflow as _get_cashflow,
+)
+from a_stock_mcp.data import (
+    get_concept_blocks as _get_concept_blocks,
+)
+from a_stock_mcp.data import (
+    get_dragon_tiger_board as _get_dragon_tiger_board,
+)
+from a_stock_mcp.data import (
+    get_fund_flow as _get_fund_flow,
+)
+from a_stock_mcp.data import (
+    get_fundamentals as _get_fundamentals,
+)
+from a_stock_mcp.data import (
+    get_global_news as _get_global_news,
+)
+from a_stock_mcp.data import (
+    get_hot_stocks as _get_hot_stocks,
+)
+from a_stock_mcp.data import (
+    get_income_statement as _get_income_statement,
+)
+from a_stock_mcp.data import (
+    get_indicators as _get_indicators,
+)
+from a_stock_mcp.data import (
+    get_industry_comparison as _get_industry_comparison,
+)
+from a_stock_mcp.data import (
+    get_insider_transactions as _get_insider_transactions,
+)
+from a_stock_mcp.data import (
+    get_lockup_expiry as _get_lockup_expiry,
+)
+from a_stock_mcp.data import (
+    get_news as _get_news,
+)
+from a_stock_mcp.data import (
+    get_northbound_flow as _get_northbound_flow,
+)
+from a_stock_mcp.data import (
+    get_profit_forecast as _get_profit_forecast,
+)
 from a_stock_mcp.data import (
     get_stock_data as _get_stock_data,
-    get_indicators as _get_indicators,
-    get_fundamentals as _get_fundamentals,
-    get_balance_sheet as _get_balance_sheet,
-    get_cashflow as _get_cashflow,
-    get_income_statement as _get_income_statement,
-    get_news as _get_news,
-    get_global_news as _get_global_news,
-    get_insider_transactions as _get_insider_transactions,
-    get_profit_forecast as _get_profit_forecast,
-    get_hot_stocks as _get_hot_stocks,
-    get_northbound_flow as _get_northbound_flow,
-    get_concept_blocks as _get_concept_blocks,
-    get_fund_flow as _get_fund_flow,
-    get_dragon_tiger_board as _get_dragon_tiger_board,
-    get_lockup_expiry as _get_lockup_expiry,
-    get_industry_comparison as _get_industry_comparison,
+)
+from a_stock_mcp.data import (
     resolve_ticker as _resolve_ticker,
 )
-
-from fastmcp import FastMCP
 
 mcp = FastMCP(
     "a-stock-data",
@@ -65,9 +96,7 @@ def _coerce_str_params(func):
     """
     sig = inspect.signature(func)
     str_params = {
-        name
-        for name, param in sig.parameters.items()
-        if param.annotation is str or param.annotation == "str"
+        name for name, param in sig.parameters.items() if param.annotation is str or param.annotation == "str"
     }
 
     if not str_params:
