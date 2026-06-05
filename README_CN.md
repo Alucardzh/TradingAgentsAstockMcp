@@ -138,6 +138,10 @@ uv run mypy src/
 uv run pytest
 ```
 
+## 致谢
+
+本项目思路及部分代码来自 [TradingAgents-astock](https://github.com/simonlin1212/TradingAgents-astock)，受益良多。如果你觉得本项目有用，建议去原项目地址给一个 star。
+
 ## 许可证
 
 [Apache License 2.0](LICENSE)
