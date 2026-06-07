@@ -21,7 +21,7 @@ Standalone, zero framework dependency.
 ### Install
 
 ```bash
-git clone https://github.com/Alucardzh/TraderAgentAstockMcp.git && cd TraderAgentAstockMcp
+git clone https://github.com/Alucardzh/TradingAgentsAstockMcp.git && cd TradingAgentsAstockMcp
 uv sync
 ```
 
@@ -42,7 +42,7 @@ uv run a-stock-mcp
 ### Claude Code
 
 ```bash
-claude mcp add a-stock-data -- uv run --project /path/to/TraderAgentAstockMcp python -m a_stock_mcp.server
+claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp python -m a_stock_mcp.server
 ```
 
 > **Windows users:** If the above fails in CMD/PowerShell, run it from Git Bash or edit `~/.claude.json` directly.
@@ -52,7 +52,7 @@ claude mcp add a-stock-data -- uv run --project /path/to/TraderAgentAstockMcp py
 Send the following prompt to the agent:
 
 ```
-请 git clone https://github.com/Alucardzh/TraderAgentAstockMcp 到合适的位置，然后添加此项目的 MCP 服务。
+请 git clone https://github.com/Alucardzh/TradingAgentsAstockMcp 到合适的位置，然后添加此项目的 MCP 服务。
 ```
 
 ## Tools Reference (18)
