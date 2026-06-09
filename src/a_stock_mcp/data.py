@@ -815,6 +815,11 @@ def _get_financial_report_sina(
     """Shared helper: fetch financial report via Sina direct HTTP API.
 
     report_type: '资产负债表' | '利润表' | '现金流量表'
+
+    Sina getFinanceReport2022 returns data under:
+        result.data.report_list.{YYYYMMDD}.data[]
+    where each entry is a list of {item_title, item_value, ...} line items.
+    We pivot into a DataFrame with one row per report period.
     """
     _report_type_map = {
         "资产负债表": "fzb",
@@ -836,25 +841,50 @@ def _get_financial_report_sina(
     r = _requests.get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
     d = r.json()
 
-    result = d.get("result", {}).get("data", {})
-    items = result.get(source_type, [])
-    if not isinstance(items, list) or not items:
+    result_data = d.get("result", {}).get("data", {})
+    report_list = result_data.get("report_list", {})
+    if not report_list:
         return pd.DataFrame()
 
-    df = pd.DataFrame(items)
+    # Collect date_type info from report_date for annual filtering
+    report_dates = result_data.get("report_date", [])
+    date_type_map = {rd["date_value"]: rd.get("date_type") for rd in report_dates}
+
+    # Pivot: each report period becomes one row
+    rows = []
+    for date_str, entry in report_list.items():
+        line_items = entry.get("data", [])
+        if not line_items:
+            continue
+        row = {"报告日": date_str, "报告类型": entry.get("rType", "")}
+        for item in line_items:
+            row[item["item_title"]] = item["item_value"]
+        rows.append(row)
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+
+    # Parse 报告日 as YYYYMMDD string → proper date
+    df["报告日"] = pd.to_datetime(df["报告日"], format="%Y%m%d", errors="coerce")
 
     # Filter by curr_date
     if curr_date and "报告日" in df.columns:
-        df["报告日"] = pd.to_datetime(df["报告日"], errors="coerce")
         cutoff = pd.to_datetime(curr_date)
         df = df[df["报告日"] <= cutoff]
 
-    # Filter by frequency (annual = month 12 reports only)
+    # Filter by frequency: annual = date_type 4 (年报)
     if freq.lower() == "annual" and "报告日" in df.columns:
-        months = pd.to_datetime(df["报告日"], errors="coerce").dt.month
-        df = df[months == 12]
+        # Use date_type_map: type 4 = 年报
+        df["_date_key"] = df["报告日"].dt.strftime("%Y%m%d")
+        df = df[df["_date_key"].map(lambda x: date_type_map.get(x) == 4)]
+        df = df.drop(columns=["_date_key"])
 
-    return df.head(8)
+    # Sort newest first, limit to 8 periods
+    df = df.sort_values("报告日", ascending=False).head(8).reset_index(drop=True)
+
+    return df
 
 
 def get_balance_sheet(
