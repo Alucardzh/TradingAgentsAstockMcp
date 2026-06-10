@@ -357,30 +357,25 @@ def _eastmoney_datacenter(
 
 
 # ---------------------------------------------------------------------------
-# 同花顺 EPS forecast helper (direct HTTP, no akshare)
+# Consensus EPS forecast helper (East Money datacenter, replaces THS HTML scraping)
 # ---------------------------------------------------------------------------
 
 
-def _ths_eps_forecast(code: str) -> pd.DataFrame:
-    """Fetch consensus EPS forecast from 同花顺 (direct HTTP).
+def _em_eps_forecast(code: str) -> dict | None:
+    """Fetch consensus EPS forecast from 东方财富 datacenter API.
 
-    Returns DataFrame with columns roughly: 年度, 预测机构数, 最小值, 均值, 最大值.
+    Returns dict with keys: RATING_ORG_NUM, YEAR1..4, EPS1..4, YEAR_MARK1..4,
+    DEC_AIMPRICEMAX, DEC_AIMPRICEMIN, INDUSTRY_BOARD, etc.  Or None on failure.
     """
-    url = f"https://basic.10jqka.com.cn/new/{code}/worth.html"
-    headers = {
-        "User-Agent": _UA,
-        "Referer": "https://basic.10jqka.com.cn/",
-    }
-    r = _requests.get(url, headers=headers, timeout=15)
-    r.encoding = "gbk"
-    dfs = pd.read_html(r.text)
-    # Find the table containing EPS data
-    for df in dfs:
-        cols = [str(c) for c in df.columns]
-        if any("每股收益" in c or "均值" in c for c in cols):
-            return df
-    # Fallback: return first table if exists
-    return dfs[0] if dfs else pd.DataFrame()
+    data = _eastmoney_datacenter(
+        report_name="RPT_WEB_RESPREDICT",
+        columns="ALL",
+        filter_str=f'(SECURITY_CODE="{code}")',
+        page_size=5,
+    )
+    if data:
+        return data[0]
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1251,46 +1246,95 @@ def get_global_news(
 def get_insider_transactions(
     ticker: Annotated[str, "A-stock code"],
 ) -> str:
-    """Get shareholder/insider activity via mootdx F10.
+    """Get shareholder/insider activity via 东方财富 F10 API.
 
     Note: A-stock insider transaction data differs from US markets.
-    Uses mootdx F10 shareholder research as the closest equivalent.
+    Shows top 10 shareholders, top 10 free-float shareholders, and holder count trends.
     """
     code = _normalize_ticker(ticker)
+    prefix = "SH" if code.startswith("6") else "SZ"
+
+    lines = [
+        f"# Shareholder Research for {code} (A-stock)",
+        "# Note: A-stock equivalent of insider transactions",
+        "# Data source: 东方财富 F10 ShareholderResearch",
+        f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+    ]
 
     try:
-        client = _get_mootdx_client()
-        if client is None:
-            return (
-                f"Error: mootdx 行情服务器连接失败，无法获取 {code} 股东数据。\n"
-                "请检查网络是否允许 TCP 7709 端口出站，或稍后重试。"
-            )
-        text = client.F10(symbol=code, name="股东研究")
+        url = "https://emweb.securities.eastmoney.com/PC_HSF10/ShareholderResearch/PageAjax"
+        r = _em_get(url, params={"code": f"{prefix}{code}"}, timeout=15)
+        d = r.json()
 
-        if not text or not text.strip():
+        # 1. Top 10 shareholders (十大股东)
+        sdgd = d.get("sdgd", [])
+        if sdgd:
+            by_date: dict[str, list] = {}
+            for item in sdgd:
+                end_date = (item.get("END_DATE") or "")[:10]
+                if end_date not in by_date:
+                    by_date[end_date] = []
+                by_date[end_date].append(item)
+
+            for date in sorted(by_date.keys(), reverse=True)[:2]:
+                items = by_date[date]
+                lines.append(f"\n## 十大股东 ({date})")
+                lines.append("排名 | 股东名称 | 持股数(万股) | 占总股本(%) | 变动")
+                for item in items:
+                    rank = item.get("HOLDER_RANK", "-")
+                    name = item.get("HOLDER_NAME", "N/A")
+                    hold = item.get("HOLD_NUM", 0)
+                    ratio = item.get("HOLD_NUM_RATIO", 0)
+                    change = item.get("HOLD_NUM_CHANGE", "N/A")
+                    hold_wan = f"{hold / 10000:.0f}" if hold else "0"
+                    lines.append(f"  {rank}. {name} | {hold_wan} | {ratio} | {change}")
+
+        # 2. Top 10 free-float shareholders (十大流通股东)
+        sdltgd = d.get("sdltgd", [])
+        if sdltgd:
+            by_date2: dict[str, list] = {}
+            for item in sdltgd:
+                end_date = (item.get("END_DATE") or "")[:10]
+                if end_date not in by_date2:
+                    by_date2[end_date] = []
+                by_date2[end_date].append(item)
+
+            for date in sorted(by_date2.keys(), reverse=True)[:2]:
+                items = by_date2[date]
+                lines.append(f"\n## 十大流通股东 ({date})")
+                lines.append("排名 | 股东名称 | 持股数(万股) | 占流通股(%) | 变动")
+                for item in items:
+                    rank = item.get("HOLDER_RANK", "-")
+                    name = item.get("HOLDER_NAME", "N/A")
+                    hold = item.get("HOLD_NUM", 0)
+                    ratio = item.get("FREE_HOLDNUM_RATIO", 0)
+                    change = item.get("HOLD_NUM_CHANGE", "N/A")
+                    hold_wan = f"{hold / 10000:.0f}" if hold else "0"
+                    ratio_str = f"{ratio:.2f}" if isinstance(ratio, (int, float)) else str(ratio)
+                    lines.append(f"  {rank}. {name} | {hold_wan} | {ratio_str} | {change}")
+
+        # 3. Shareholder count trend (股东户数变化)
+        gdrs = d.get("gdrs", [])
+        if gdrs:
+            lines.append("\n## 股东户数变化")
+            lines.append("日期 | 股东户数 | 较上期变化(%) | 户均持股(股)")
+            prev_count = None
+            for item in gdrs:
+                end_date = (item.get("END_DATE") or "")[:10]
+                count = item.get("HOLDER_TOTAL_NUM")
+                ratio = item.get("TOTAL_NUM_RATIO")
+                avg_shares = item.get("AVG_FREE_SHARES")
+                count_str = f"{count:,}" if count else "N/A"
+                ratio_str = f"{ratio:.2f}%" if isinstance(ratio, (int, float)) else "N/A"
+                avg_str = f"{avg_shares:.0f}" if isinstance(avg_shares, (int, float)) else "N/A"
+                lines.append(f"  {end_date} | {count_str} | {ratio_str} | {avg_str}")
+                prev_count = count
+
+        if not sdgd and not sdltgd and not gdrs:
             return f"No insider/shareholder data found for A-stock '{code}'"
 
-        header = f"# Shareholder Research for {code} (A-stock)\n"
-        header += "# Note: A-stock equivalent of insider transactions\n"
-        header += "# Data source: mootdx F10\n"
-        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-
-        import re
-
-        sec4_hits = list(re.finditer(r"\r?\n【4\.股东变化】\r?\n", text))
-        if sec4_hits:
-            sec4_pos = sec4_hits[-1].start()
-            before_sec4 = text[:sec4_pos]
-            sec4_text = text[sec4_pos:]
-            cut_at = 2000
-            if len(sec4_text) > cut_at:
-                sec4_text = (
-                    sec4_text[:cut_at] + "\n\n(... older shareholder history omitted, "
-                    f"{len(text) - sec4_pos - cut_at} chars truncated ...)"
-                )
-            text = before_sec4 + sec4_text
-
-        return header + text
+        return "\n".join(lines)
 
     except Exception as e:
         return f"Error retrieving insider/shareholder data for {code}: {str(e)}"
@@ -1303,41 +1347,47 @@ def get_profit_forecast(
     ticker: Annotated[str, "A-stock code"],
     curr_date: Annotated[str, "current date (unused, for interface compat)"] = None,
 ) -> str:
-    """Get consensus EPS forecasts with forward valuation (同花顺 direct HTTP)."""
+    """Get consensus EPS forecasts with forward valuation (East Money datacenter)."""
     code = _normalize_ticker(ticker)
 
     try:
-        df = _ths_eps_forecast(code)
+        rec = _em_eps_forecast(code)
 
-        if df is None or df.empty:
+        if rec is None:
             return f"No analyst coverage found for A-stock '{code}'"
 
         lines = [
             f"# Consensus EPS Forecast for {code} (A-stock)",
-            "# Source: 同花顺 analyst consensus (direct HTTP)",
+            "# Source: 东方财富 analyst consensus (datacenter-web)",
             f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
         ]
 
-        eps_by_year = {}
-        for _, row in df.iterrows():
-            year = str(row.iloc[0]) if len(row) > 0 else ""
-            count_val = row.iloc[1] if len(row) > 1 else 0
-            mean_eps_val = row.iloc[3] if len(row) > 3 else 0
-            min_eps_val = row.iloc[2] if len(row) > 2 else "N/A"
-            max_eps_val = row.iloc[4] if len(row) > 4 else "N/A"
-            try:
-                count = int(count_val)
-            except (ValueError, TypeError):
-                count = 0
-            try:
-                mean_eps = float(mean_eps_val)
-            except (ValueError, TypeError):
-                mean_eps = 0
-            lines.append(f"FY{year}: EPS={mean_eps} (range {min_eps_val}~{max_eps_val}), analysts={count}")
-            if count < 3:
-                lines.append("  Warning: low coverage (<3 analysts)")
-            eps_by_year[year] = mean_eps
+        org_num = rec.get("RATING_ORG_NUM", 0) or 0
+        buy_num = rec.get("RATING_BUY_NUM", 0) or 0
+        add_num = rec.get("RATING_ADD_NUM", 0) or 0
+        industry = rec.get("INDUSTRY_BOARD", "N/A")
+        aim_max = rec.get("DEC_AIMPRICEMAX")
+        aim_min = rec.get("DEC_AIMPRICEMIN")
+        lines.append(f"Analysts: {org_num} (Buy={buy_num}, Add={add_num})")
+        lines.append(f"Industry: {industry}")
+        if aim_max and aim_min:
+            lines.append(f"Target Price: {aim_min} ~ {aim_max}")
+
+        # EPS by year (up to 4 years)
+        eps_by_year: dict[int, float] = {}
+        for i in range(1, 5):
+            year = rec.get(f"YEAR{i}")
+            eps = rec.get(f"EPS{i}")
+            mark = rec.get(f"YEAR_MARK{i}", "?")
+            if year and eps is not None:
+                eps = float(eps)
+                label = "Actual" if mark == "A" else "Estimate"
+                lines.append(f"FY{year}: EPS={eps:.2f} ({label})")
+                eps_by_year[year] = eps
+
+        if org_num > 0 and org_num < 3:
+            lines.append("Warning: low coverage (<3 analysts)")
 
         # Forward valuation
         try:
@@ -1348,21 +1398,29 @@ def get_profit_forecast(
                 lines.append(f"\nCurrent: price={price}, PE(TTM)={pe_ttm}")
 
                 years_sorted = sorted(eps_by_year.keys())
-                if years_sorted and eps_by_year.get(years_sorted[0], 0) > 0:
-                    eps_cur = eps_by_year[years_sorted[0]]
-                    fwd_pe = price / eps_cur
-                    lines.append(f"Forward PE (FY{years_sorted[0]}): {fwd_pe:.1f}x")
-                    if len(years_sorted) >= 2 and eps_by_year.get(years_sorted[1], 0) > 0:
-                        eps_next = eps_by_year[years_sorted[1]]
-                        cagr = eps_next / eps_cur - 1
-                        if cagr > 0:
-                            peg = fwd_pe / (cagr * 100)
-                            lines.append(f"PEG: {peg:.2f} (CAGR={cagr * 100:.0f}%)")
-                            if fwd_pe > 30:
-                                digest = math.log(fwd_pe / 30) / math.log(1 + cagr)
-                                lines.append(f"PE Digestion to 30x: {digest:.1f} years")
-                        else:
-                            lines.append(f"EPS declining ({cagr * 100:.0f}%), PEG not applicable")
+                # Find the first "E" (estimate) year for forward PE
+                est_years = [y for y in years_sorted if rec.get(f"YEAR_MARK{[i for i in range(1,5) if rec.get(f'YEAR{i}')==y][0]}") == "E"]
+                if est_years:
+                    fwd_year = est_years[0]
+                    fwd_eps = eps_by_year[fwd_year]
+                    if fwd_eps > 0:
+                        fwd_pe = price / fwd_eps
+                        lines.append(f"Forward PE (FY{fwd_year}): {fwd_pe:.1f}x")
+                        # Find next estimate year for CAGR
+                        est_idx = years_sorted.index(fwd_year)
+                        if est_idx + 1 < len(years_sorted):
+                            next_year = years_sorted[est_idx + 1]
+                            next_eps = eps_by_year[next_year]
+                            if fwd_eps > 0:
+                                cagr = next_eps / fwd_eps - 1
+                                if cagr > 0:
+                                    peg = fwd_pe / (cagr * 100)
+                                    lines.append(f"PEG: {peg:.2f} (CAGR={cagr * 100:.0f}%)")
+                                    if fwd_pe > 30:
+                                        digest = math.log(fwd_pe / 30) / math.log(1 + cagr)
+                                        lines.append(f"PE Digestion to 30x: {digest:.1f} years")
+                                else:
+                                    lines.append(f"EPS declining ({cagr * 100:.0f}%), PEG not applicable")
         except Exception as e:
             logger.warning("Forward PE calc failed for %s: %s", code, e)
 

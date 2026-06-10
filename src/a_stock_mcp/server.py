@@ -326,7 +326,8 @@ def get_insider_transactions(
 ) -> str:
     """Retrieve insider transaction / shareholder activity data.
 
-    Uses mootdx F10 shareholder research data.
+    Uses 东方财富 F10 ShareholderResearch API for top 10 shareholders,
+    top 10 free-float shareholders, and holder count trends.
 
     Args:
         ticker: 6-digit A-stock code (e.g. 600379).
@@ -349,8 +350,9 @@ def get_profit_forecast(
 ) -> str:
     """Retrieve consensus EPS forecasts with forward valuation metrics.
 
-    Returns analyst coverage count, EPS range, forward PE, PEG,
-    and PE digestion time from TongHuaShun (同花顺).
+    Returns analyst coverage count, EPS by year (actual + estimates),
+    forward PE, PEG, target price range, and PE digestion time
+    from East Money datacenter (东方财富).
 
     Args:
         ticker: 6-digit A-stock code (e.g. 688017).
