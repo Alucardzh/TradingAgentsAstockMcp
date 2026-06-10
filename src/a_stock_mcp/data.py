@@ -313,11 +313,17 @@ def _em_get(url, params=None, headers=None, timeout=15, **kwargs):
     所有 eastmoney.com 接口都应通过它请求，避免多 Agent 高频拉数据被封 IP。
     串行限流：与上次东财请求间隔 < EM_MIN_INTERVAL 时 sleep 补足 + 0.1~0.5s 随机抖动。
     传入的 headers 会覆盖 session 默认 UA（用于保留各端点自己的 Referer/Origin）。
+    首次连接失败自动重试 1 次（应对 RemoteDisconnected / ConnectionError）。
     """
     wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
     if wait > 0:
         time.sleep(wait + random.uniform(0.1, 0.5))
     try:
+        return _EM_SESSION.get(url, params=params, headers=headers, timeout=timeout, **kwargs)
+    except (_requests.exceptions.ConnectionError, _requests.exceptions.ChunkedEncodingError):
+        # Transient network error — retry once after short delay
+        logger.warning("东财请求瞬态失败，1s 后重试: %s", url)
+        time.sleep(1)
         return _EM_SESSION.get(url, params=params, headers=headers, timeout=timeout, **kwargs)
     finally:
         _em_last_call[0] = time.time()
@@ -591,7 +597,7 @@ _INDICATOR_DESCRIPTIONS = {
 
 def get_indicators(
     symbol: Annotated[str, "A-stock code"],
-    indicator: Annotated[str, "technical indicator (e.g. rsi, macd, close_50_sma)"],
+    indicator: Annotated[str, "technical indicator (e.g. rsi, macd, close_50_sma, 'all')"],
     curr_date: Annotated[str, "Current trading date, YYYY-mm-dd"],
     look_back_days: Annotated[int, "how many days to look back"],
 ) -> str:
@@ -600,23 +606,31 @@ def get_indicators(
 
     code = _normalize_ticker(symbol)
 
-    if indicator not in _INDICATOR_DESCRIPTIONS:
+    if indicator == "all":
+        indicators = list(_INDICATOR_DESCRIPTIONS.keys())
+    elif indicator not in _INDICATOR_DESCRIPTIONS:
         raise ValueError(f"Indicator {indicator} not supported. Choose from: {list(_INDICATOR_DESCRIPTIONS.keys())}")
+    else:
+        indicators = [indicator]
 
     try:
         data = _load_ohlcv_astock(code, curr_date)
         df = wrap(data)
         df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
-        # Trigger stockstats calculation
-        df[indicator]
+        # Trigger stockstats calculation for all requested indicators
+        for ind in indicators:
+            df[ind]
 
-        # Build date -> value lookup
+        # Build date -> {indicator: value} lookup
         ind_dict = {}
         for _, row in df.iterrows():
             d = row["Date"]
-            v = row[indicator]
-            ind_dict[d] = "N/A" if pd.isna(v) else str(round(float(v), 4))
+            vals = {}
+            for ind in indicators:
+                v = row[ind]
+                vals[ind] = "N/A" if pd.isna(v) else str(round(float(v), 4))
+            ind_dict[d] = vals
 
         # Generate output for look_back window
         curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
@@ -626,17 +640,29 @@ def get_indicators(
         dt = curr_dt
         while dt >= before:
             ds = dt.strftime("%Y-%m-%d")
-            val = ind_dict.get(ds, "N/A: Not a trading day (weekend or holiday)")
-            lines.append(f"{ds}: {val}")
+            vals = ind_dict.get(ds)
+            if vals is None:
+                lines.append(f"{ds}: N/A: Not a trading day (weekend or holiday)")
+            elif len(indicators) == 1:
+                lines.append(f"{ds}: {vals[indicators[0]]}")
+            else:
+                parts = " | ".join(f"{ind}={vals[ind]}" for ind in indicators)
+                lines.append(f"{ds}: {parts}")
             dt -= relativedelta(days=1)
 
+        indicator_label = "all indicators" if indicator == "all" else indicator
         result = (
-            f"## {indicator} values for {code} "
+            f"## {indicator_label} for {code} "
             f"from {before.strftime('%Y-%m-%d')} to {curr_date}:\n\n"
             + "\n".join(lines)
             + "\n\n"
-            + _INDICATOR_DESCRIPTIONS.get(indicator, "")
         )
+        if indicator == "all":
+            result += "Indicators: " + ", ".join(
+                f"{ind} ({_INDICATOR_DESCRIPTIONS[ind]})" for ind in indicators
+            )
+        else:
+            result += _INDICATOR_DESCRIPTIONS.get(indicator, "")
         return result
 
     except Exception as e:
@@ -1234,6 +1260,11 @@ def get_insider_transactions(
 
     try:
         client = _get_mootdx_client()
+        if client is None:
+            return (
+                f"Error: mootdx 行情服务器连接失败，无法获取 {code} 股东数据。\n"
+                "请检查网络是否允许 TCP 7709 端口出站，或稍后重试。"
+            )
         text = client.F10(symbol=code, name="股东研究")
 
         if not text or not text.strip():

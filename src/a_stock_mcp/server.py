@@ -166,17 +166,19 @@ def get_indicators(
 ) -> str:
     """Retrieve technical indicators for a given A-stock code.
 
-    Supported indicators (pass as the indicator parameter, one at a time):
+    Supported indicators (pass as the indicator parameter, one at a time, or 'all'):
     - close_50_sma, close_200_sma, close_10_ema (Moving Averages)
     - macd, macds, macdh (MACD)
     - rsi (RSI)
     - boll, boll_ub, boll_lb (Bollinger Bands)
     - atr (ATR)
     - vwma (Volume Weighted MA)
+    - mfi (Money Flow Index)
+    - all (all of the above)
 
     Args:
         symbol: 6-digit A-stock code (e.g. 600379).
-        indicator: Technical indicator identifier (e.g. 'rsi', 'macd').
+        indicator: Technical indicator identifier (e.g. 'rsi', 'macd', 'all').
         curr_date: Current trading date in YYYY-mm-dd format.
         look_back_days: How many days to look back (default 30).
 
