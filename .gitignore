@@ -33,3 +33,6 @@ TradingAgents-CN/
 # uv
 .python-version
 .ruff_cache
+
+.claude/
+issue/

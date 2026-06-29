@@ -196,25 +196,28 @@ def _get_mootdx_client():
     if _mootdx_client_error is not None:
         return None
 
+    from mootdx import config as mootdx_config
     from mootdx.quotes import Quotes
 
-    # Try default server first, then common alternates
-    for server in [None, "119.147.212.81:7709", "112.74.214.43:7727"]:
+    # mootdx Quotes.factory ignores ip=/port= kwargs — the __init__ reads
+    # BESTIP from config. We must set it before each attempt.
+    # ponytail: hard-coded fallback list, fetch live bestip if this stops working
+    for server in [
+        ("112.74.214.43", 7727),   #腾讯双线
+        ("110.41.147.114", 7709),  #阿里双线1
+        ("8.129.13.54", 7709),     #阿里双线2
+        ("120.24.149.49", 7709),   #阿里双线3
+    ]:
         try:
-            kwargs = {"market": "std"}
-            if server:
-                host, port = server.split(":")
-                kwargs["ip"] = host
-                kwargs["port"] = int(port)
-            client = Quotes.factory(**kwargs)
-            # Verify connection works
+            mootdx_config.set("BESTIP", {"HQ": server})
+            client = Quotes.factory(market="std")
             test = client.stocks(market=1)
             if test is not None:
                 _mootdx_client = client
-                logger.info("mootdx connected to %s", server or "default")
+                logger.info("mootdx connected to %s:%s", server[0], server[1])
                 return _mootdx_client
         except Exception as e:
-            logger.warning("mootdx connect failed (%s): %s", server or "default", e)
+            logger.warning("mootdx connect failed (%s:%s): %s", server[0], server[1], e)
             continue
 
     _mootdx_client_error = (
