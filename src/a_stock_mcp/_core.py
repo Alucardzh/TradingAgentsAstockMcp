@@ -256,6 +256,8 @@ def _tencent_quote(codes: list[str]) -> dict[str, dict]:
             "price": float(vals[3]) if vals[3] else 0,
             "last_close": float(vals[4]) if vals[4] else 0,
             "open": float(vals[5]) if vals[5] else 0,
+            "volume": float(vals[36]) if vals[36] else 0,
+            "amount": float(vals[37]) if vals[37] else 0,
             "change_pct": float(vals[32]) if vals[32] else 0,
             "high": float(vals[33]) if vals[33] else 0,
             "low": float(vals[34]) if vals[34] else 0,

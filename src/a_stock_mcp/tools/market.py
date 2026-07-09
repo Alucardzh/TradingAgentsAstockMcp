@@ -1,4 +1,4 @@
-"""Market data tools — OHLCV K-lines and technical indicators."""
+"""Market data tools — OHLCV K-lines, technical indicators, support/resistance, index, realtime."""
 
 from __future__ import annotations
 
@@ -8,7 +8,15 @@ from typing import Annotated
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from a_stock_mcp._core import _get_mootdx_client, _load_ohlcv_astock, _normalize_ticker, _sina_kline_fallback, logger
+from a_stock_mcp._core import (
+    _em_get,
+    _get_mootdx_client,
+    _load_ohlcv_astock,
+    _normalize_ticker,
+    _sina_kline_fallback,
+    _tencent_quote,
+    logger,
+)
 
 # ===========================================================================
 # 9 Vendor Methods (matching interface.py VENDOR_METHODS signatures)
@@ -181,3 +189,248 @@ def get_indicators(
 
     except Exception as e:
         return f"Error calculating {indicator} for {code}: {str(e)}"
+
+
+# ---- 3. calculate_support_resistance ----
+
+
+def _cluster_price_levels(
+    candidates: list[dict], n_target: int, merge_threshold: float = 0.02
+) -> list[float]:
+    """Cluster nearby price levels by strength (weighted average merge)."""
+    if not candidates:
+        return []
+
+    candidates.sort(key=lambda x: x["strength"], reverse=True)
+
+    clusters: list[dict] = []
+    for cand in candidates:
+        price = cand["price"]
+        strength = cand["strength"]
+
+        merged = False
+        for cluster in clusters:
+            if abs(price - cluster["price"]) / cluster["price"] < merge_threshold:
+                total = cluster["strength"] + strength
+                cluster["price"] = (cluster["price"] * cluster["strength"] + price * strength) / total
+                cluster["strength"] = total
+                cluster["count"] += 1
+                merged = True
+                break
+
+        if not merged:
+            clusters.append({"price": price, "strength": strength, "count": 1})
+
+    clusters.sort(key=lambda x: x["strength"], reverse=True)
+    return [c["price"] for c in clusters[:n_target]]
+
+
+def calculate_support_resistance(
+    symbol: Annotated[str, "A-stock code"],
+    curr_date: Annotated[str, "Current date YYYY-MM-DD"],
+    n_levels: Annotated[int, "number of support/resistance levels (1-10)"] = 5,
+    lookback_period: Annotated[int, "lookback days (30-365)"] = 60,
+) -> str:
+    """Calculate support and resistance levels from historical price distribution.
+
+    Uses a histogram-based algorithm: finds price zones where the stock spent
+    the most time (highest frequency), then clusters nearby levels to avoid
+    redundancy. Supports are in the bottom 40% of the range, resistances in
+    the top 40%.
+
+    Args:
+        symbol: 6-digit A-stock code (e.g. 600519).
+        curr_date: Current date YYYY-MM-DD (prevents look-ahead bias).
+        n_levels: Number of levels per side (1-10, default 5).
+        lookback_period: Analysis window in days (30-365, default 60).
+    """
+    code = _normalize_ticker(symbol)
+    n_levels = max(1, min(int(n_levels), 10))
+    lookback_period = max(30, min(int(lookback_period), 365))
+
+    try:
+        # Load OHLCV (mootdx → Sina fallback, cached, filtered by curr_date)
+        df = _load_ohlcv_astock(code, curr_date)
+        if df.empty:
+            return f"No historical data for {code} to calculate support/resistance"
+
+        prices = df["Close"].astype(float)
+        lookback = min(lookback_period, len(prices))
+        recent = prices.iloc[-lookback:]
+
+        current_price = float(prices.iloc[-1])
+        price_min = float(recent.min())
+        price_max = float(recent.max())
+        price_range = price_max - price_min
+
+        if price_range == 0:
+            return f"Cannot calculate S/R for {code}: price range is zero in the lookback period"
+
+        # Histogram: find price zones with highest停留 frequency
+        n_bins = 100
+        counts, bin_edges = pd.cut(recent, bins=n_bins, labels=False, retbins=True)
+        hist = counts.value_counts().sort_index()
+
+        # Candidate levels: top 3x n_levels by frequency
+        top_indices = hist.nlargest(n_levels * 3).index.tolist()
+
+        support_candidates: list[dict] = []
+        resistance_candidates: list[dict] = []
+
+        for idx in top_indices:
+            price_level = (bin_edges[idx] + bin_edges[idx + 1]) / 2
+            percentile = (price_level - price_min) / price_range
+            strength = int(hist.get(idx, 0)) / len(recent)
+
+            if percentile < 0.4:
+                support_candidates.append({"price": float(price_level), "strength": strength})
+            elif percentile > 0.6:
+                resistance_candidates.append({"price": float(price_level), "strength": strength})
+
+        # Cluster + filter: supports below current price, resistances above
+        support_levels = [
+            s for s in _cluster_price_levels(support_candidates, n_levels) if s < current_price * 1.01
+        ]
+        resistance_levels = [
+            r for r in _cluster_price_levels(resistance_candidates, n_levels) if r > current_price * 0.99
+        ]
+
+        # Volatility (annualized) and trend
+        volatility = float(prices.pct_change().std() * (252**0.5))
+        if lookback < len(prices):
+            price_trend = "up" if prices.iloc[-1] > prices.iloc[-lookback] else "down"
+        else:
+            price_trend = "neutral"
+
+        # Format output
+        lines = [
+            f"# Support & Resistance for {code} (A-stock)",
+            f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"# Lookback: {lookback} days | Current price: {current_price:.2f}",
+            f"# Volatility (annualized): {volatility:.4f} | Trend: {price_trend}",
+            "",
+        ]
+
+        lines.append("## Resistance Levels (压力位)")
+        for i, r in enumerate(sorted(resistance_levels)):
+            dist = (r - current_price) / current_price * 100
+            lines.append(f"  R{i + 1}: {r:.2f} (+{dist:.1f}%)")
+
+        lines.append("\n## Support Levels (支撑位)")
+        for i, s in enumerate(sorted(support_levels, reverse=True)):
+            dist = (current_price - s) / current_price * 100
+            lines.append(f"  S{i + 1}: {s:.2f} (-{dist:.1f}%)")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error calculating support/resistance for {code}: {str(e)}"
+
+
+# ---- 4. get_market_index ----
+
+
+def get_market_index(
+    index_code: Annotated[str, "index code (e.g. 000001 上证, 000300 沪深300, 399006 创业板指)"] = "000001",
+) -> str:
+    """Get real-time market index snapshot from 东方财富 push2.
+
+    Supports major A-share indices: 上证指数(000001), 沪深300(000300),
+    上证50(000016), 创业板指(399006), 科创50(000688), 中证500(000905).
+
+    Args:
+        index_code: 6-digit index code (default 000001 for Shanghai Composite).
+    """
+    code = index_code.strip()
+
+    # SZ indices start with 3 (secid prefix 0), all others use SH (prefix 1)
+    secid = f"0.{code}" if code.startswith("3") else f"1.{code}"
+
+    try:
+        url = "https://push2.eastmoney.com/api/qt/stock/get"
+        params = {
+            "fltt": "2",
+            "invt": "2",
+            "fields": "f43,f44,f45,f46,f47,f48,f57,f58,f169,f170,f171",
+            "secid": secid,
+        }
+        r = _em_get(url, params=params, timeout=10)
+        d = r.json().get("data", {})
+
+        if not d:
+            return f"No index data found for code '{code}'"
+
+        name = d.get("f58", "N/A")
+        current = d.get("f43", 0)
+        change = d.get("f169", 0)
+        change_pct = d.get("f170", 0)
+        high = d.get("f44", 0)
+        low = d.get("f45", 0)
+        open_val = d.get("f46", 0)
+        volume = d.get("f47", 0)
+        amount = d.get("f48", 0)
+
+        lines = [
+            f"# Market Index: {code} ({name})",
+            "# Source: 东方财富 push2",
+            f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            f"Current: {current}",
+            f"Change: {change:+.2f} ({change_pct:+.2f}%)",
+            f"Open: {open_val} | High: {high} | Low: {low}",
+            f"Volume: {volume:,} | Amount: {amount / 1e8:.2f}亿",
+        ]
+
+        if change_pct > 0:
+            lines.append("Signal: Market UP")
+        elif change_pct < 0:
+            lines.append("Signal: Market DOWN")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error fetching market index {code}: {str(e)}"
+
+
+# ---- 5. get_stock_realtime ----
+
+
+def get_stock_realtime(
+    symbol: Annotated[str, "A-stock code (e.g. 600519)"],
+) -> str:
+    """Get real-time stock price snapshot (current price, change, volume, amount).
+
+    Lightweight single-stock quote from Tencent Finance. Faster than get_stock_data
+    (which returns historical K-lines) when you only need the latest tick.
+
+    Args:
+        symbol: 6-digit A-stock code (e.g. 600519).
+    """
+    code = _normalize_ticker(symbol)
+
+    try:
+        tq = _tencent_quote([code])
+        if code not in tq:
+            return f"No realtime data found for A-stock '{code}'"
+
+        q = tq[code]
+        change = q["price"] - q["last_close"] if q["last_close"] else 0
+
+        lines = [
+            f"# Realtime Quote for {code} ({q['name']})",
+            "# Source: Tencent Finance (qt.gtimg.cn)",
+            f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            f"Price: {q['price']}",
+            f"Change: {change:+.2f} ({q['change_pct']:+.2f}%)",
+            f"Open: {q['open']} | High: {q['high']} | Low: {q['low']}",
+            f"Last Close: {q['last_close']}",
+            f"Volume: {q['volume']:,.0f}手 | Amount: {q['amount'] / 10000:.2f}亿",
+            f"Turnover Rate: {q['turnover_pct']}%",
+            f"Limit Up: {q['limit_up']} | Limit Down: {q['limit_down']}",
+        ]
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error fetching realtime data for {code}: {str(e)}"

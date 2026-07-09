@@ -30,6 +30,7 @@ from a_stock_mcp._core import (  # noqa: F401
     safe_ticker_component,
 )
 from a_stock_mcp.tools import (  # noqa: F401
+    calculate_support_resistance,
     get_balance_sheet,
     get_cashflow,
     get_company_announcements,
@@ -44,8 +45,11 @@ from a_stock_mcp.tools import (  # noqa: F401
     get_industry_comparison,
     get_insider_transactions,
     get_lockup_expiry,
+    get_market_index,
     get_news,
     get_northbound_flow,
     get_profit_forecast,
     get_stock_data,
+    get_stock_realtime,
+    get_ths_hot_list,
 )

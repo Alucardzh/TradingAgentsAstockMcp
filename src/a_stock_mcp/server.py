@@ -1,6 +1,6 @@
 """A-Stock Data MCP Server — standalone, zero tradingagents dependency.
 
-Exposes 19 data tools (18 data functions + resolve_ticker) via FastMCP (stdio).
+Exposes 23 data tools (22 data functions + resolve_ticker) via FastMCP (stdio).
 Compatible with Claude Code, OpenClaw, and Hermes.
 
 Usage:

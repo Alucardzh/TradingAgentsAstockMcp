@@ -5,7 +5,7 @@ A股（中国沪深京交易所）行情数据 MCP 服务器，为 AI 编程代�
 
 ## 特性
 
-- **19 个 MCP 工具** — 从 K 线行情到公司公告，覆盖行情、基本面、新闻、资金流等全场景
+- **23 个 MCP 工具** — 从 K 线行情到支撑阻力位，覆盖行情、基本面、新闻、资金流等全场景
 - **多数据源自动降级** — 以 mootdx TCP 为主，Sina/腾讯/东方财富/同花顺/百度/财联社/巨潮资讯自动兜底
 - **内置防封限速** — 东方财富 & 巨潮资讯请求走单点节流（可配最小间隔 + 随机抖动）
 - **智能代码解析** — 支持中文名（"贵州茅台"）、前缀（SH600519）、后缀（600519.SH）等多种格式
@@ -55,7 +55,7 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 请 git clone https://github.com/Alucardzh/TradingAgentsAstockMcp 到合适的位置，然后添加此项目的 MCP 服务。
 ```
 
-## 工具一览（19 个）
+## 工具一览（23 个）
 
 ### 行情数据
 
@@ -64,6 +64,9 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 | `resolve_ticker` | 将中文名或各种代码格式解析为标准 6 位代码 |
 | `get_stock_data` | OHLCV 日 K 线数据（最多 800 根） |
 | `get_indicators` | 技术指标：SMA、EMA、MACD、RSI、布林带、ATR、VWMA、MFI 等（共 14 种） |
+| `calculate_support_resistance` | 支撑/阻力位（价格分布直方图 + 聚类算法） |
+| `get_market_index` | 大盘指数实时快照（沪深300、上证指数、创业板指等） |
+| `get_stock_realtime` | 个股实时价格快照（价格、涨跌、成交量、成交额） |
 
 ### 基本面 & 财务
 
@@ -84,6 +87,7 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 | `get_global_news` | 国内/全球财经新闻（财联社 + 东方财富 7x24） |
 | `get_hot_stocks` | 涨停股 + 人工标注涨停原因 + 题材频次分析 |
 | `get_company_announcements` | 巨潮资讯网公司公告（年报/季报/重大事项等，含 PDF 直链） |
+| `get_ths_hot_list` | 同花顺热度榜（人气排名 + AI 生成的上榜原因 + 概念标签） |
 
 ### 资金流向
 
@@ -123,12 +127,12 @@ src/a_stock_mcp/
 ├── data.py               向后兼容 shim（从 _core + tools re-export）
 └── tools/
     ├── __init__.py       register_tools() + _coerce_str_params + 汇总 re-export
-    ├── market.py         get_stock_data, get_indicators
+    ├── market.py         get_stock_data, get_indicators, calculate_support_resistance, get_market_index, get_stock_realtime
     ├── fundamentals.py   get_fundamentals, balance_sheet, cashflow, income_statement, profit_forecast
     ├── news.py           get_news, get_global_news
     ├── capital.py        get_fund_flow, get_northbound_flow, get_dragon_tiger_board
     ├── shareholder.py    get_insider_transactions, get_lockup_expiry
-    └── screening.py      get_hot_stocks, get_concept_blocks, get_company_announcements, get_industry_comparison
+    └── screening.py      get_hot_stocks, get_concept_blocks, get_company_announcements, get_industry_comparison, get_ths_hot_list
 ```
 
 ## 配置

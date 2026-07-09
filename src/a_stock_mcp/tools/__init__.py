@@ -3,7 +3,7 @@
 Import the raw functions directly:
     ``from a_stock_mcp.tools import get_stock_data``
 
-Or register all 19 tools onto a FastMCP instance:
+Or register all 23 tools onto a FastMCP instance:
     ``from a_stock_mcp.tools import register_tools``
     ``register_tools(mcp)``
 """
@@ -39,10 +39,19 @@ from a_stock_mcp.tools.fundamentals import (
     get_profit_forecast as _get_profit_forecast,
 )
 from a_stock_mcp.tools.market import (
+    calculate_support_resistance as _calculate_support_resistance,
+)
+from a_stock_mcp.tools.market import (
     get_indicators as _get_indicators,
 )
 from a_stock_mcp.tools.market import (
+    get_market_index as _get_market_index,
+)
+from a_stock_mcp.tools.market import (
     get_stock_data as _get_stock_data,
+)
+from a_stock_mcp.tools.market import (
+    get_stock_realtime as _get_stock_realtime,
 )
 from a_stock_mcp.tools.news import (
     get_global_news as _get_global_news,
@@ -62,6 +71,9 @@ from a_stock_mcp.tools.screening import (
 from a_stock_mcp.tools.screening import (
     get_industry_comparison as _get_industry_comparison,
 )
+from a_stock_mcp.tools.screening import (
+    get_ths_hot_list as _get_ths_hot_list,
+)
 from a_stock_mcp.tools.shareholder import (
     get_insider_transactions as _get_insider_transactions,
 )
@@ -74,6 +86,9 @@ __all__ = [
     # market
     "get_stock_data",
     "get_indicators",
+    "calculate_support_resistance",
+    "get_market_index",
+    "get_stock_realtime",
     # fundamentals
     "get_fundamentals",
     "get_balance_sheet",
@@ -95,6 +110,7 @@ __all__ = [
     "get_concept_blocks",
     "get_company_announcements",
     "get_industry_comparison",
+    "get_ths_hot_list",
 ]
 
 # Re-export the un-aliased names so ``from a_stock_mcp.tools import get_stock_data`` works
@@ -106,13 +122,20 @@ from a_stock_mcp.tools.fundamentals import (  # noqa: E402
     get_income_statement,
     get_profit_forecast,
 )
-from a_stock_mcp.tools.market import get_indicators, get_stock_data  # noqa: E402
+from a_stock_mcp.tools.market import (  # noqa: E402
+    calculate_support_resistance,
+    get_indicators,
+    get_market_index,
+    get_stock_data,
+    get_stock_realtime,
+)
 from a_stock_mcp.tools.news import get_global_news, get_news  # noqa: E402
 from a_stock_mcp.tools.screening import (  # noqa: E402
     get_company_announcements,
     get_concept_blocks,
     get_hot_stocks,
     get_industry_comparison,
+    get_ths_hot_list,
 )
 from a_stock_mcp.tools.shareholder import get_insider_transactions, get_lockup_expiry  # noqa: E402
 
@@ -154,7 +177,7 @@ def _coerce_str_params(func):
 
 
 def register_tools(mcp) -> None:
-    """Register all 19 A-stock tools onto a FastMCP instance.
+    """Register all 23 A-stock tools onto a FastMCP instance.
 
     Each tool is a thin wrapper with an MCP-consumer-facing docstring and
     ``_coerce_str_params`` applied, then registered via ``@mcp.tool()``.
@@ -226,6 +249,68 @@ def register_tools(mcp) -> None:
             Formatted indicator data as a text table.
         """
         return _get_indicators(symbol, indicator, curr_date, look_back_days)
+
+    @mcp.tool()
+    @_coerce_str_params
+    def calculate_support_resistance(
+        symbol: str,
+        curr_date: str,
+        n_levels: int = 5,
+        lookback_period: int = 60,
+    ) -> str:
+        """Calculate support and resistance levels from historical price distribution.
+
+        Uses a histogram-based algorithm to find price zones where the stock
+        spent the most time, then clusters nearby levels. Supports are in the
+        bottom 40% of the range, resistances in the top 40%.
+
+        Args:
+            symbol: 6-digit A-stock code (e.g. 600519).
+            curr_date: Current date YYYY-MM-DD (prevents look-ahead bias).
+            n_levels: Number of levels per side (1-10, default 5).
+            lookback_period: Analysis window in days (30-365, default 60).
+
+        Returns:
+            Support/resistance levels with distance from current price,
+            annualized volatility, and price trend.
+        """
+        return _calculate_support_resistance(symbol, curr_date, n_levels, lookback_period)
+
+    @mcp.tool()
+    @_coerce_str_params
+    def get_market_index(
+        index_code: str = "000001",
+    ) -> str:
+        """Get real-time market index snapshot (上证指数/沪深300/创业板指 etc.).
+
+        Supports: 000001(上证), 000300(沪深300), 000016(上证50),
+        399006(创业板指), 000688(科创50), 000905(中证500).
+
+        Args:
+            index_code: 6-digit index code (default 000001 for Shanghai Composite).
+
+        Returns:
+            Index snapshot: current point, change, volume, amount.
+        """
+        return _get_market_index(index_code)
+
+    @mcp.tool()
+    @_coerce_str_params
+    def get_stock_realtime(
+        symbol: str,
+    ) -> str:
+        """Get real-time stock price snapshot (current price, change, volume).
+
+        Lightweight single-stock quote. Faster than get_stock_data (historical
+        K-lines) when you only need the latest tick.
+
+        Args:
+            symbol: 6-digit A-stock code (e.g. 600519).
+
+        Returns:
+            Realtime price, change, volume, amount, high/low, turnover rate.
+        """
+        return _get_stock_realtime(symbol)
 
     # --- Fundamental Data ---
 
@@ -561,3 +646,24 @@ def register_tools(mcp) -> None:
             Industry performance ranking with key metrics.
         """
         return _get_industry_comparison(ticker, curr_date)
+
+    @mcp.tool()
+    @_coerce_str_params
+    def get_ths_hot_list(
+        span: str = "hour",
+        limit: int = 50,
+    ) -> str:
+        """Get THS popularity hot list (同花顺热度榜) with AI reason tags.
+
+        Returns stocks ranked by real-time popularity, each with a
+        human-readable 上榜原因 and concept tags. Distinct from get_hot_stocks
+        (which shows limit-up stocks only).
+
+        Args:
+            span: 'hour' for last-1-hour ranking, 'day' for today's ranking.
+            limit: Maximum stocks to return (1-100, default 50).
+
+        Returns:
+            Hot list with rank, code, name, popularity score, change, tags, reason.
+        """
+        return _get_ths_hot_list(span, limit)

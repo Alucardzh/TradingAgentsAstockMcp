@@ -439,3 +439,66 @@ def get_industry_comparison(
         lines.append(f"行业对比查询失败: {e}")
 
     return "\n".join(lines)
+
+
+# ---- 18. get_ths_hot_list ----
+
+
+def get_ths_hot_list(
+    span: Annotated[str, "time span: 'hour' (近1小时榜) or 'day' (今日榜)"] = "hour",
+    limit: Annotated[int, "max results (1-100)"] = 50,
+) -> str:
+    """Get THS popularity hot list (同花顺热度榜) with AI-generated reason tags.
+
+    Returns stocks ranked by real-time popularity, each with a human-readable
+    上榜原因 (reason for trending) and concept tags. Distinct from get_hot_stocks
+    (which shows limit-up stocks only).
+
+    Args:
+        span: 'hour' for last-1-hour ranking, 'day' for today's full-day ranking.
+        limit: Maximum number of stocks to return (1-100).
+    """
+    if span not in ("hour", "day"):
+        return f"Invalid span '{span}'. Use 'hour' or 'day'."
+
+    limit = max(1, min(int(limit), 100))
+
+    try:
+        url = "https://dq.10jqka.com.cn/fuyao/hot_list_data/out/hot_list/v1/stock"
+        params = {"stock_type": "a", "type": span, "list_type": "normal"}
+        headers = {
+            "User-Agent": _UA,
+            "Referer": "https://www.10jqka.com.cn/",
+        }
+        r = _requests.get(url, params=params, headers=headers, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        if data.get("status_code") != 0:
+            return f"同花顺热度榜 API error: status_code={data.get('status_code')}"
+
+        stock_list = data.get("data", {}).get("stock_list", [])
+        if not stock_list:
+            return f"No hot list data for span='{span}' (may be non-trading hours)"
+
+        lines = [
+            f"# 同花顺热度榜 (span={span}, top {min(limit, len(stock_list))})",
+            f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            "排名 | 代码 | 名称 | 热度 | 涨幅 | 标签 | 上榜原因",
+        ]
+
+        for item in stock_list[:limit]:
+            rank = item.get("order", "")
+            code = item.get("code", "")
+            name = item.get("name", "")
+            rate = item.get("rate", "")
+            rise = item.get("rise_and_fall", 0)
+            tags = ",".join(item.get("tag", {}).get("concept_tag", []))
+            reason = f"{item.get('analyse_title', '')} {item.get('analyse', '')}".strip()
+            lines.append(f"  {rank}. {code} {name} | 热度{rate} | {rise}% | {tags} | {reason}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error fetching THS hot list: {str(e)}"

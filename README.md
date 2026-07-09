@@ -5,7 +5,7 @@ Standalone, zero framework dependency.
 
 ## Features
 
-- **19 MCP tools** — from K-line data to company announcements, covering market data, fundamentals, news, capital flow, and more
+- **23 MCP tools** — from K-line data to support/resistance levels, covering market data, fundamentals, news, capital flow, and more
 - **Multi-source with auto-fallback** — mootdx TCP (primary), Sina/Tencent/Eastmoney/THS/Baidu/CLS/Cninfo as backup
 - **Anti-ban built-in** — Eastmoney & Cninfo requests are rate-limited with configurable minimum interval + random jitter
 - **Smart ticker resolution** — accepts Chinese names (e.g. "贵州茅台"), codes with prefixes (SH600519), or suffixes (600519.SH)
@@ -55,7 +55,7 @@ Send the following prompt to the agent:
 请 git clone https://github.com/Alucardzh/TradingAgentsAstockMcp 到合适的位置，然后添加此项目的 MCP 服务。
 ```
 
-## Tools Reference (19)
+## Tools Reference (23)
 
 ### Market Data
 
@@ -64,6 +64,9 @@ Send the following prompt to the agent:
 | `resolve_ticker` | Resolve Chinese stock name or various code formats to a normalized 6-digit code |
 | `get_stock_data` | OHLCV daily K-line data (up to 800 bars) |
 | `get_indicators` | Technical indicators: SMA, EMA, MACD, RSI, Bollinger, ATR, VWMA, MFI, etc. (14 total) |
+| `calculate_support_resistance` | Support/resistance levels from price distribution histogram + clustering |
+| `get_market_index` | Real-time market index snapshot (沪深300, 上证指数, 创业板指, etc.) |
+| `get_stock_realtime` | Real-time single-stock price snapshot (price, change, volume, amount) |
 
 ### Fundamentals & Financials
 
@@ -84,6 +87,7 @@ Send the following prompt to the agent:
 | `get_global_news` | China/global financial news (CLS + Eastmoney 7x24) |
 | `get_hot_stocks` | Limit-up stocks with curated reason tags + theme frequency |
 | `get_company_announcements` | Company announcements from cninfo.com.cn (annual/quarterly reports, major events, etc.) |
+| `get_ths_hot_list` | THS popularity hot list (同花顺热度榜) with AI-generated reason tags |
 
 ### Capital Flow
 
@@ -123,12 +127,12 @@ src/a_stock_mcp/
 ├── data.py               Backward-compat shim (re-exports from _core + tools)
 └── tools/
     ├── __init__.py       register_tools() + _coerce_str_params + re-exports
-    ├── market.py         get_stock_data, get_indicators
+    ├── market.py         get_stock_data, get_indicators, calculate_support_resistance, get_market_index, get_stock_realtime
     ├── fundamentals.py   get_fundamentals, balance_sheet, cashflow, income_statement, profit_forecast
     ├── news.py           get_news, get_global_news
     ├── capital.py        get_fund_flow, get_northbound_flow, get_dragon_tiger_board
     ├── shareholder.py    get_insider_transactions, get_lockup_expiry
-    └── screening.py      get_hot_stocks, get_concept_blocks, get_company_announcements, get_industry_comparison
+    └── screening.py      get_hot_stocks, get_concept_blocks, get_company_announcements, get_industry_comparison, get_ths_hot_list
 ```
 
 ## Configuration
