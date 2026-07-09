@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.request
 from datetime import datetime
 from typing import Annotated
 
@@ -330,10 +331,60 @@ def calculate_support_resistance(
 # ---- 4. get_market_index ----
 
 
+def _tencent_index_quote(code: str) -> dict | None:
+    """Fetch a single market index quote from Tencent (qt.gtimg.cn).
+
+    Index prefix rules differ from stocks: 399xxx → SZ, everything else → SH.
+    Returns dict with name, current, last_close, change, change_pct, volume, amount.
+    Returns None on failure.
+    """
+    # Index codes: 399xxx = SZ, 000xxx = SH (opposite of stock rules)
+    prefix = "sz" if code.startswith("399") else "sh"
+    url = f"https://qt.gtimg.cn/q={prefix}{code}"
+    try:
+        req = urllib.request.Request(url)
+        req.add_header("User-Agent", "Mozilla/5.0")
+        resp = urllib.request.urlopen(req, timeout=10)
+        raw = resp.read().decode("gbk")
+        if '="' not in raw:
+            return None
+        vals = raw.split('"')[1].split("~")
+        if len(vals) < 34:
+            return None
+        # Tencent index field layout (verified 2026-07):
+        # vals[1]=名称, vals[3]=最新价, vals[4]=昨收, vals[5]=今开,
+        # vals[6]=成交量, vals[31]=涨跌额, vals[32]=涨跌幅(%),
+        # vals[33]=最高, vals[34]=最低, vals[37]=成交额(万)
+        name = vals[1] if vals[1] else code
+        current = float(vals[3]) if vals[3] else 0
+        last_close = float(vals[4]) if vals[4] else 0
+        open_val = float(vals[5]) if vals[5] else 0
+        volume = float(vals[6]) if vals[6] else 0
+        change = float(vals[31]) if vals[31] else 0
+        change_pct = float(vals[32]) if vals[32] else 0
+        high = float(vals[33]) if vals[33] else 0
+        low = float(vals[34]) if vals[34] else 0
+        return {
+            "name": name,
+            "current": current,
+            "last_close": last_close,
+            "open": open_val,
+            "change": change,
+            "change_pct": change_pct,
+            "volume": volume,
+            "high": high,
+            "low": low,
+        }
+    except Exception:
+        return None
+
+
 def get_market_index(
     index_code: Annotated[str, "index code (e.g. 000001 上证, 000300 沪深300, 399006 创业板指)"] = "000001",
 ) -> str:
-    """Get real-time market index snapshot from 东方财富 push2.
+    """Get real-time market index snapshot.
+
+    Primary source: 东方财富 push2. Fallback: Tencent Finance (qt.gtimg.cn).
 
     Supports major A-share indices: 上证指数(000001), 沪深300(000300),
     上证50(000016), 创业板指(399006), 科创50(000688), 中证500(000905).
@@ -346,6 +397,7 @@ def get_market_index(
     # SZ indices start with 3 (secid prefix 0), all others use SH (prefix 1)
     secid = f"0.{code}" if code.startswith("3") else f"1.{code}"
 
+    # --- Primary: Eastmoney push2 ---
     try:
         url = "https://push2.eastmoney.com/api/qt/stock/get"
         params = {
@@ -357,39 +409,57 @@ def get_market_index(
         r = _em_get(url, params=params, timeout=10)
         d = r.json().get("data", {})
 
-        if not d:
-            return f"No index data found for code '{code}'"
+        if d:
+            name = d.get("f58", "N/A")
+            current = d.get("f43", 0)
+            change = d.get("f169", 0)
+            change_pct = d.get("f170", 0)
+            high = d.get("f44", 0)
+            low = d.get("f45", 0)
+            open_val = d.get("f46", 0)
+            volume = d.get("f47", 0)
+            amount = d.get("f48", 0)
 
-        name = d.get("f58", "N/A")
-        current = d.get("f43", 0)
-        change = d.get("f169", 0)
-        change_pct = d.get("f170", 0)
-        high = d.get("f44", 0)
-        low = d.get("f45", 0)
-        open_val = d.get("f46", 0)
-        volume = d.get("f47", 0)
-        amount = d.get("f48", 0)
+            lines = [
+                f"# Market Index: {code} ({name})",
+                "# Source: 东方财富 push2",
+                f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "",
+                f"Current: {current}",
+                f"Change: {change:+.2f} ({change_pct:+.2f}%)",
+                f"Open: {open_val} | High: {high} | Low: {low}",
+                f"Volume: {volume:,} | Amount: {amount / 1e8:.2f}亿",
+            ]
 
+            if change_pct > 0:
+                lines.append("Signal: Market UP")
+            elif change_pct < 0:
+                lines.append("Signal: Market DOWN")
+
+            return "\n".join(lines)
+    except Exception as e:
+        logger.warning("Eastmoney push2 index failed for %s: %s, trying Tencent fallback", code, e)
+
+    # --- Fallback: Tencent Finance ---
+    tq = _tencent_index_quote(code)
+    if tq:
         lines = [
-            f"# Market Index: {code} ({name})",
-            "# Source: 东方财富 push2",
+            f"# Market Index: {code} ({tq['name']})",
+            "# Source: Tencent Finance (qt.gtimg.cn) — fallback",
             f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
-            f"Current: {current}",
-            f"Change: {change:+.2f} ({change_pct:+.2f}%)",
-            f"Open: {open_val} | High: {high} | Low: {low}",
-            f"Volume: {volume:,} | Amount: {amount / 1e8:.2f}亿",
+            f"Current: {tq['current']}",
+            f"Change: {tq['change']:+.2f} ({tq['change_pct']:+.2f}%)",
+            f"Open: {tq['open']} | High: {tq['high']} | Low: {tq['low']}",
+            f"Volume: {tq['volume']:,.0f}",
         ]
-
-        if change_pct > 0:
+        if tq["change_pct"] > 0:
             lines.append("Signal: Market UP")
-        elif change_pct < 0:
+        elif tq["change_pct"] < 0:
             lines.append("Signal: Market DOWN")
-
         return "\n".join(lines)
 
-    except Exception as e:
-        return f"Error fetching market index {code}: {str(e)}"
+    return f"Error fetching market index {code}: both Eastmoney and Tencent failed"
 
 
 # ---- 5. get_stock_realtime ----
