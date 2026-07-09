@@ -5,9 +5,9 @@ A股（中国沪深京交易所）行情数据 MCP 服务器，为 AI 编程代�
 
 ## 特性
 
-- **18 个 MCP 工具** — 从 K 线行情到龙虎榜，覆盖行情、基本面、新闻、资金流等全场景
-- **多数据源自动降级** — 以 mootdx TCP 为主，Sina/腾讯/东方财富/同花顺/百度/财联社自动兜底
-- **内置防封限速** — 东方财富请求走单点节流（可配最小间隔 + 随机抖动）
+- **19 个 MCP 工具** — 从 K 线行情到公司公告，覆盖行情、基本面、新闻、资金流等全场景
+- **多数据源自动降级** — 以 mootdx TCP 为主，Sina/腾讯/东方财富/同花顺/百度/财联社/巨潮资讯自动兜底
+- **内置防封限速** — 东方财富 & 巨潮资讯请求走单点节流（可配最小间隔 + 随机抖动）
 - **智能代码解析** — 支持中文名（"贵州茅台"）、前缀（SH600519）、后缀（600519.SH）等多种格式
 - **本地缓存** — K 线按股票缓存 CSV；北向资金通过每日快照自建历史
 
@@ -55,7 +55,7 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 请 git clone https://github.com/Alucardzh/TradingAgentsAstockMcp 到合适的位置，然后添加此项目的 MCP 服务。
 ```
 
-## 工具一览（18 个）
+## 工具一览（19 个）
 
 ### 行情数据
 
@@ -74,7 +74,7 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 | `get_cashflow` | 现金流量表（季度/年度） |
 | `get_income_statement` | 利润表（季度/年度） |
 | `get_profit_forecast` | 分析师一致预期 EPS、远期 PE、PEG、PE 消化时间 |
-| `get_insider_transactions` | 股东研究 / 内部人士交易 |
+| `get_insider_transactions` | 十大股东、股东户数变化、董监高持股变动明细 |
 
 ### 新闻 & 情绪
 
@@ -83,6 +83,7 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 | `get_news` | 个股相关新闻 |
 | `get_global_news` | 国内/全球财经新闻（财联社 + 东方财富 7x24） |
 | `get_hot_stocks` | 涨停股 + 人工标注涨停原因 + 题材频次分析 |
+| `get_company_announcements` | 巨潮资讯网公司公告（年报/季报/重大事项等，含 PDF 直链） |
 
 ### 资金流向
 
@@ -107,10 +108,28 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 | mootdx（通达信） | TCP | K 线、名称代码映射、F10 股东数据 |
 | 新浪财经 | HTTP | K 线备用、财务报表 |
 | 腾讯财经 | HTTP | PE/PB/市值 |
-| 东方财富 | HTTP | 新闻搜索、资金流、龙虎榜、解禁、行业排名 |
-| 同花顺 | HTTP | 盈利预测、涨停股、北向资金 |
+| 东方财富 | HTTP | 新闻搜索、资金流、龙虎榜、解禁、行业排名、董监高持股变动、一致预期 EPS |
+| 同花顺 | HTTP | 涨停股、北向资金 |
 | 财联社 | HTTP | 实时财经新闻电报 |
 | 百度股市通 | HTTP | 概念/板块归属 |
+| 巨潮资讯网 | HTTP | 公司公告 |
+
+## 项目结构
+
+```
+src/a_stock_mcp/
+├── _core.py              共享基础设施：代码解析、mootdx 客户端、各数据源 HTTP 辅助函数
+├── server.py             FastMCP 实例 + register_tools() 调用 + 入口
+├── data.py               向后兼容 shim（从 _core + tools re-export）
+└── tools/
+    ├── __init__.py       register_tools() + _coerce_str_params + 汇总 re-export
+    ├── market.py         get_stock_data, get_indicators
+    ├── fundamentals.py   get_fundamentals, balance_sheet, cashflow, income_statement, profit_forecast
+    ├── news.py           get_news, get_global_news
+    ├── capital.py        get_fund_flow, get_northbound_flow, get_dragon_tiger_board
+    ├── shareholder.py    get_insider_transactions, get_lockup_expiry
+    └── screening.py      get_hot_stocks, get_concept_blocks, get_company_announcements, get_industry_comparison
+```
 
 ## 配置
 
@@ -118,8 +137,9 @@ claude mcp add a-stock-data -- uv run --project /path/to/TradingAgentsAstockMcp 
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `ASTOCK_CACHE_DIR` | `~/.astock-mcp/cache` | K 线 CSV 缓存和北向资金日缓存目录 |
+| `ASTOCK_CACHE_DIR` | `~/.astock-mcp/cache` | K 线 CSV 缓存、北向资金日缓存、巨潮 orgId 映射缓存目录 |
 | `EM_MIN_INTERVAL` | `1.0`（秒） | 东方财富 API 最小请求间隔。多代理批量场景建议调至 1.5–2.0 |
+| `CNINFO_MIN_INTERVAL` | `1.0`（秒） | 巨潮资讯网 API 最小请求间隔 |
 
 ## 开发
 

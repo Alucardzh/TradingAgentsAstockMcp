@@ -5,9 +5,9 @@ Standalone, zero framework dependency.
 
 ## Features
 
-- **18 MCP tools** — from K-line data to dragon-tiger board, covering market data, fundamentals, news, capital flow, and more
-- **Multi-source with auto-fallback** — mootdx TCP (primary), Sina/Tencent/Eastmoney/THS/Baidu/CLS as backup
-- **Anti-ban built-in** — Eastmoney requests are rate-limited with configurable minimum interval + random jitter
+- **19 MCP tools** — from K-line data to company announcements, covering market data, fundamentals, news, capital flow, and more
+- **Multi-source with auto-fallback** — mootdx TCP (primary), Sina/Tencent/Eastmoney/THS/Baidu/CLS/Cninfo as backup
+- **Anti-ban built-in** — Eastmoney & Cninfo requests are rate-limited with configurable minimum interval + random jitter
 - **Smart ticker resolution** — accepts Chinese names (e.g. "贵州茅台"), codes with prefixes (SH600519), or suffixes (600519.SH)
 - **Local caching** — OHLCV data cached per ticker; northbound flow self-builds history via daily snapshots
 
@@ -55,7 +55,7 @@ Send the following prompt to the agent:
 请 git clone https://github.com/Alucardzh/TradingAgentsAstockMcp 到合适的位置，然后添加此项目的 MCP 服务。
 ```
 
-## Tools Reference (18)
+## Tools Reference (19)
 
 ### Market Data
 
@@ -74,7 +74,7 @@ Send the following prompt to the agent:
 | `get_cashflow` | Cash flow statement (quarterly or annual) |
 | `get_income_statement` | Income statement (quarterly or annual) |
 | `get_profit_forecast` | Analyst consensus EPS, forward PE, PEG, PE digestion |
-| `get_insider_transactions` | Shareholder research / insider activity |
+| `get_insider_transactions` | Top-10 shareholders, holder count trends, executive shareholding changes (董监高持股变动) |
 
 ### News & Sentiment
 
@@ -83,6 +83,7 @@ Send the following prompt to the agent:
 | `get_news` | Stock-specific news articles |
 | `get_global_news` | China/global financial news (CLS + Eastmoney 7x24) |
 | `get_hot_stocks` | Limit-up stocks with curated reason tags + theme frequency |
+| `get_company_announcements` | Company announcements from cninfo.com.cn (annual/quarterly reports, major events, etc.) |
 
 ### Capital Flow
 
@@ -107,10 +108,28 @@ Send the following prompt to the agent:
 | mootdx (通达信) | TCP | K-line data, name-code map, F10 insider data |
 | Sina Finance | HTTP | K-line fallback, financial statements |
 | Tencent Finance | HTTP | PE/PB/market cap |
-| Eastmoney | HTTP | News search, fund flow, dragon-tiger, lockup, industry ranking |
-| TongHuaShun (同花顺) | HTTP | Profit forecast, hot stocks, northbound flow |
+| Eastmoney | HTTP | News search, fund flow, dragon-tiger, lockup, industry ranking, executive hold-changes, consensus EPS |
+| TongHuaShun (同花顺) | HTTP | Hot stocks, northbound flow |
 | CLS (财联社) | HTTP | Real-time financial news wire |
 | Baidu PAE | HTTP | Concept/sector block membership |
+| Cninfo (巨潮资讯网) | HTTP | Company announcements |
+
+## Project Structure
+
+```
+src/a_stock_mcp/
+├── _core.py              Shared infrastructure: ticker resolution, mootdx client, HTTP helpers
+├── server.py             FastMCP instance + register_tools() call + entry point
+├── data.py               Backward-compat shim (re-exports from _core + tools)
+└── tools/
+    ├── __init__.py       register_tools() + _coerce_str_params + re-exports
+    ├── market.py         get_stock_data, get_indicators
+    ├── fundamentals.py   get_fundamentals, balance_sheet, cashflow, income_statement, profit_forecast
+    ├── news.py           get_news, get_global_news
+    ├── capital.py        get_fund_flow, get_northbound_flow, get_dragon_tiger_board
+    ├── shareholder.py    get_insider_transactions, get_lockup_expiry
+    └── screening.py      get_hot_stocks, get_concept_blocks, get_company_announcements, get_industry_comparison
+```
 
 ## Configuration
 
@@ -118,8 +137,9 @@ Send the following prompt to the agent:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ASTOCK_CACHE_DIR` | `~/.astock-mcp/cache` | Directory for OHLCV CSV cache and northbound daily cache |
+| `ASTOCK_CACHE_DIR` | `~/.astock-mcp/cache` | Directory for OHLCV CSV cache, northbound daily cache, and cninfo orgId map |
 | `EM_MIN_INTERVAL` | `1.0` (seconds) | Minimum interval between Eastmoney API requests. Increase to 1.5–2.0 for multi-agent batch scenarios |
+| `CNINFO_MIN_INTERVAL` | `1.0` (seconds) | Minimum interval between Cninfo (巨潮资讯网) API requests |
 
 ## Development
 
