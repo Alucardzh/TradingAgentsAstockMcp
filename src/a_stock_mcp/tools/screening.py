@@ -217,6 +217,7 @@ _CNINFO_CATEGORY = {
 }
 
 _CNINFO_SESSION = _requests.Session()
+_CNINFO_SESSION.trust_env = False  # ignore shell HTTPS_PROXY — cninfo must connect directly
 _CNINFO_SESSION.headers.update(_CNINFO_HEADERS)
 _CNINFO_MIN_INTERVAL = float(os.environ.get("CNINFO_MIN_INTERVAL", "1.0"))
 _cninfo_last_call = [0.0]
