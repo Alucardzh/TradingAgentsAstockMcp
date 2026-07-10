@@ -145,6 +145,7 @@ src/a_stock_mcp/
 | `EM_MIN_INTERVAL` | `1.0`（秒） | 东方财富 API 最小请求间隔。多代理批量场景建议调至 1.5–2.0 |
 | `CNINFO_MIN_INTERVAL` | `1.0`（秒） | 巨潮资讯网 API 最小请求间隔 |
 | `AKPROXY_TOKEN` | *(空)* | 可选。设置后，东财直连失败（IP 封禁）时自动 fallback 到代理（浏览器指纹模拟 + 轮换 IP）。需先 `uv sync --extra proxy` |
+| `MCP_IDLE_TIMEOUT` | `360`（秒） | 无工具调用超过此时间自动退出进程，防止僵尸进程。设为 `0` 可禁用 |
 
 ### 可选：东财反封代理
 

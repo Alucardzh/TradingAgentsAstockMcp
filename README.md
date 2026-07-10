@@ -145,6 +145,7 @@ src/a_stock_mcp/
 | `EM_MIN_INTERVAL` | `1.0` (seconds) | Minimum interval between Eastmoney API requests. Increase to 1.5–2.0 for multi-agent batch scenarios |
 | `CNINFO_MIN_INTERVAL` | `1.0` (seconds) | Minimum interval between Cninfo (巨潮资讯网) API requests |
 | `AKPROXY_TOKEN` | *(empty)* | Optional. When set, direct Eastmoney connection failures (IP ban) automatically fallback to proxy with browser-fingerprint spoofing. Requires `uv sync --extra proxy` |
+| `MCP_IDLE_TIMEOUT` | `360` (seconds) | Auto-exit if no tool call for this duration. Prevents zombie processes when MCP client stops responding without closing stdin. Set to `0` to disable |
 
 ### Optional: Eastmoney Proxy (Anti-Ban)
 
