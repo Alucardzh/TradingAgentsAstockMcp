@@ -10,6 +10,12 @@ Usage:
 
 from __future__ import annotations
 
+import atexit
+import os
+import signal
+import sys
+import threading
+
 from fastmcp import FastMCP
 
 from a_stock_mcp.tools import register_tools
@@ -25,11 +31,42 @@ mcp = FastMCP(
     ),
 )
 
-# Register all 19 tools (wrappers with MCP-facing docstrings + str coercion)
+# Register all 23 tools (wrappers with MCP-facing docstrings + str coercion)
 register_tools(mcp)
 
 
+def _cleanup_and_exit(signum=None, frame=None):
+    """Force-exit the process, ensuring no lingering threads/sessions."""
+    os._exit(0)
+
+
+def _watch_stdin():
+    """Background thread: exit when MCP client disconnects (stdin EOF).
+
+    Some MCP clients (e.g. OpenClaw) don't send a proper shutdown — they just
+    close the pipe. Without this watcher the process lingers as a zombie because
+    mcp.run() blocks on its event loop while non-daemon threads (requests
+    Keep-Alive, curl_cffi) keep the process alive.
+    """
+    try:
+        while True:
+            data = sys.stdin.buffer.read(1)
+            if not data:
+                # stdin closed (EOF) — client gone
+                _cleanup_and_exit()
+    except (OSError, ValueError):
+        _cleanup_and_exit()
+
+
 def main():
+    # Register cleanup hooks for common termination signals
+    atexit.register(_cleanup_and_exit)
+    signal.signal(signal.SIGTERM, _cleanup_and_exit)
+
+    # Watch for stdin EOF (MCP client disconnect) in a daemon thread
+    watcher = threading.Thread(target=_watch_stdin, daemon=True)
+    watcher.start()
+
     mcp.run()
 
 
