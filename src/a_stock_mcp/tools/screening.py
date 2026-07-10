@@ -106,15 +106,17 @@ _BAIDU_PAE_HEADERS = {
 def get_concept_blocks(
     ticker: Annotated[str, "A-stock code (e.g. 688017)"],
 ) -> str:
-    """Get concept/sector/region blocks that a stock belongs to (百度股市通).
+    """Get concept/sector/region blocks that a stock belongs to.
 
-    Returns industry classification (申万), concept themes, and region.
-    Each block includes current day's change percentage.
+    Primary source: 百度股市通 (Baidu PAE) — returns industry, concept themes,
+    and region with daily change percentages.
+    Fallback: 东方财富 push2his — returns industry (f127) and region (f128).
     """
     import requests
 
     code = _normalize_ticker(ticker)
 
+    # --- Primary: Baidu PAE ---
     try:
         url = (
             "https://finance.pae.baidu.com/api/getrelatedblock"
@@ -144,46 +146,67 @@ def get_concept_blocks(
                 wait = 0.5 * (2**attempt)  # 0.5, 1.0, 2.0
                 logger.warning("Baidu PAE transient error, retry %d/3 after %.1fs: %s", attempt + 1, wait, e)
                 time.sleep(wait)
-        if last_err is not None:
-            return f"Error fetching concept blocks for {code} (after 3 retries): {last_err}"
 
-        if str(d.get("ResultCode", -1)) != "0":
-            return f"Baidu PAE error: ResultCode={d.get('ResultCode')} {d.get('ResultMsg', '')}"
+        if last_err is None and str(d.get("ResultCode", -1)) == "0":
+            result = d.get("Result", {})
+            categories = result.get(code, [])
+            if categories:
+                lines = [
+                    f"# Concept & Sector Blocks for {code} (A-stock)",
+                    "# Source: 百度股市通 (Baidu PAE)",
+                    f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    "",
+                ]
 
-        result = d.get("Result", {})
-        categories = result.get(code, [])
-        if not categories:
+                concept_names: list[str] = []
+
+                for cat in categories:
+                    cat_name = cat.get("name", "")
+                    items = cat.get("list", [])
+                    if not items:
+                        continue
+                    lines.append(f"## {cat_name}")
+                    for item in items:
+                        name = item.get("name", "")
+                        ratio = item.get("ratio", "")
+                        desc = item.get("describe", "")
+                        suffix = f" ({desc})" if desc else ""
+                        lines.append(f"  {name}{suffix}: {ratio}")
+                        if cat_name == "概念":
+                            concept_names.append(name)
+
+                if concept_names:
+                    lines.append(f"\nConcept tags: {' / '.join(concept_names)}")
+
+                return "\n".join(lines)
+
+        logger.warning("Baidu PAE failed for %s, trying Eastmoney fallback", code)
+    except Exception:
+        logger.warning("Baidu PAE failed for %s, trying Eastmoney fallback", code)
+
+    # --- Fallback: Eastmoney push2his (f127=行业, f128=地域) ---
+    try:
+        secid = f"1.{code}" if code.startswith(("6", "9")) else f"0.{code}"
+        url = "https://push2his.eastmoney.com/api/qt/stock/get"
+        params = {"fltt": "2", "invt": "2", "fields": "f57,f58,f127,f128", "secid": secid}
+        r = _em_get(url, params=params, timeout=10)
+        d = r.json().get("data", {})
+        if not d:
             return f"No concept/block data for {code}"
 
         lines = [
             f"# Concept & Sector Blocks for {code} (A-stock)",
-            "# Source: 百度股市通 (Baidu PAE)",
+            "# Source: 东方财富 push2his (fallback)",
             f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
         ]
-
-        concept_names: list[str] = []
-
-        for cat in categories:
-            cat_name = cat.get("name", "")
-            items = cat.get("list", [])
-            if not items:
-                continue
-            lines.append(f"## {cat_name}")
-            for item in items:
-                name = item.get("name", "")
-                ratio = item.get("ratio", "")
-                desc = item.get("describe", "")
-                suffix = f" ({desc})" if desc else ""
-                lines.append(f"  {name}{suffix}: {ratio}")
-                if cat_name == "概念":
-                    concept_names.append(name)
-
-        if concept_names:
-            lines.append(f"\nConcept tags: {' / '.join(concept_names)}")
-
+        name = d.get("f58", "N/A")
+        industry = d.get("f127", "N/A")
+        region = d.get("f128", "N/A")
+        lines.append(f"## {name} ({code})")
+        lines.append(f"  行业: {industry}")
+        lines.append(f"  地域: {region}")
         return "\n".join(lines)
-
     except Exception as e:
         return f"Error fetching concept blocks for {code}: {str(e)}"
 
@@ -404,9 +427,9 @@ def get_industry_comparison(
     code = safe_ticker_component(ticker)
     lines = [f"# 行业横向对比 | {code} | {trade_date}"]
 
-    # 东财 push2 行业板块排名 (direct HTTP, replaces 同花顺 which has 401)
+    # 东财 push2his 行业板块排名 (push2his stable, push2 prone to disconnects)
     try:
-        url = "https://push2.eastmoney.com/api/qt/clist/get"
+        url = "https://push2his.eastmoney.com/api/qt/clist/get"
         params = {
             "pn": "1",
             "pz": "100",

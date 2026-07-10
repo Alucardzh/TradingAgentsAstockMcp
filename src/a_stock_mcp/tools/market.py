@@ -397,9 +397,9 @@ def get_market_index(
     # SZ indices start with 3 (secid prefix 0), all others use SH (prefix 1)
     secid = f"0.{code}" if code.startswith("3") else f"1.{code}"
 
-    # --- Primary: Eastmoney push2 ---
+    # --- Primary: Eastmoney push2his (push2 disconnects, push2his stable) ---
     try:
-        url = "https://push2.eastmoney.com/api/qt/stock/get"
+        url = "https://push2his.eastmoney.com/api/qt/stock/get"
         params = {
             "fltt": "2",
             "invt": "2",
@@ -421,8 +421,8 @@ def get_market_index(
             amount = d.get("f48", 0)
 
             lines = [
-                f"# Market Index: {code} ({name})",
-                "# Source: 东方财富 push2",
+            f"# Market Index: {code} ({name})",
+            "# Source: 东方财富 push2his",
                 f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 "",
                 f"Current: {current}",

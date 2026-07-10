@@ -24,26 +24,26 @@ def get_fund_flow(
     curr_date: Annotated[str, "Date YYYY-MM-DD"],
     include_history: Annotated[bool, "Include historical daily fund flow (last 20 days)"] = True,
 ) -> str:
-    """Get individual stock fund flow from 东财 push2.
+    """Get individual stock fund flow from 东财 push2his.
 
     Realtime: minute-level main/large/medium/small/super order net inflow.
-    History: daily net inflow for 20 trading days (push2his).
+    History: daily net inflow for 20 trading days.
 
-    V0.2.7: replaced 百度 PAE (fundflow/fundsortlist, offline since 2026-05)
-    with 东财 push2 fund flow API.
+    Uses push2his.eastmoney.com (stable) instead of push2.eastmoney.com
+    (prone to RemoteDisconnected).
     """
     code = _normalize_ticker(ticker)
     secid = f"1.{code}" if code.startswith("6") else f"0.{code}"
     lines = [
         f"# Fund Flow for {code} (A-stock)",
-        "# Source: 东财 push2 (Eastmoney)",
+        "# Source: 东财 push2his (Eastmoney)",
         f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
     ]
 
     try:
-        # Realtime minute-level fund flow
-        url_rt = "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get"
+        # Realtime minute-level fund flow (push2his — push2 is unstable)
+        url_rt = "https://push2his.eastmoney.com/api/qt/stock/fflow/kline/get"
         params_rt = {
             "secid": secid,
             "klt": 1,

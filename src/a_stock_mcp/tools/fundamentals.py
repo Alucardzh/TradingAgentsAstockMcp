@@ -79,10 +79,10 @@ def get_fundamentals(
         except Exception as e:
             logger.warning("mootdx finance failed for %s: %s", code, e)
 
-        # --- Eastmoney push2: basic stock info (direct HTTP) ---
+        # --- Eastmoney push2his: basic stock info (push2his stable, push2 disconnects) ---
         try:
             market_code = 1 if code.startswith("6") else 0
-            _info_url = "https://push2.eastmoney.com/api/qt/stock/get"
+            _info_url = "https://push2his.eastmoney.com/api/qt/stock/get"
             _info_params = {
                 "fltt": "2",
                 "invt": "2",
