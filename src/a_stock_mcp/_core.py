@@ -32,7 +32,7 @@ import requests as _requests
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# 可选：东财代理 fallback（当 AKPROXY_TOKEN 非空且 curl_cffi 已安装时启用）
+# 可选：东财代理 fallback（当 AKPROXY_TOKEN 余额充足且 curl_cffi 已安装时启用）
 # 直连东财失败（RemoteDisconnected / IP 封禁）时，自动 fallback 到代理：
 #   curl_cffi 浏览器指纹 + 轮换代理 IP + Cookie 绕过风控。
 # 安装：pip install curl_cffi （或 uv sync --extra proxy）
@@ -42,22 +42,33 @@ _AKPROXY_IP = os.environ.get("AKPROXY_IP", "101.201.173.125")
 _AKPROXY_AVAILABLE = False
 
 if _AKPROXY_TOKEN:
+    # Verify token has balance before activating proxy
     try:
-        from curl_cffi import requests as _cffi_requests
-        from curl_cffi.requests import BrowserType as _BrowserType
-
-        _AKPROXY_BROWSERS = [
-            b
-            for b in _BrowserType.__dict__.values()
-            if isinstance(b, str) and (b.startswith("chrome") or b.startswith("edge"))
-        ]
-        _AKPROXY_AVAILABLE = True
-        logger.info("AKPROXY_TOKEN detected — Eastmoney proxy fallback enabled")
-    except ImportError:
-        logger.warning(
-            "AKPROXY_TOKEN set but curl_cffi not installed. "
-            "Install with: uv sync --extra proxy"
+        _token_check = _requests.get(
+            f"http://{_AKPROXY_IP}:47001/api/token/{_AKPROXY_TOKEN}", timeout=(2, 5)
         )
+        _balance = _token_check.json().get("balance", 0)
+        if _balance <= 0:
+            logger.warning("AKPROXY_TOKEN balance is 0 — proxy fallback disabled")
+        else:
+            try:
+                from curl_cffi import requests as _cffi_requests
+                from curl_cffi.requests import BrowserType as _BrowserType
+
+                _AKPROXY_BROWSERS = [
+                    b
+                    for b in _BrowserType.__dict__.values()
+                    if isinstance(b, str) and (b.startswith("chrome") or b.startswith("edge"))
+                ]
+                _AKPROXY_AVAILABLE = True
+                logger.info("AKProxy enabled (balance=%d) — Eastmoney fallback active", _balance)
+            except ImportError:
+                logger.warning(
+                    "AKPROXY_TOKEN has balance but curl_cffi not installed. "
+                    "Install with: uv sync --extra proxy"
+                )
+    except Exception:
+        logger.warning("AKPROXY_TOKEN set but auth server unreachable — proxy disabled")
 
 # Proxy auth cache (refreshed every 28s, same as akshare_proxy_patch)
 _proxy_auth_cache: dict | None = None
