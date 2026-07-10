@@ -36,3 +36,5 @@ TradingAgents-CN/
 
 .claude/
 issue/
+.env
+.zcode/

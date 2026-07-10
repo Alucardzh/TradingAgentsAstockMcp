@@ -155,10 +155,13 @@ src/a_stock_mcp/
    uv sync --extra proxy
    ```
 
-2. 在环境变量或 `.env` 中设置 token：
+2. 复制环境模板并填入 token：
    ```bash
-   export AKPROXY_TOKEN=你的token
+   cp env.template .env
+   # 编辑 .env：AKPROXY_TOKEN=你的token
    ```
+
+   Token 从 [ak.cheapproxy.net/dashboard/akshare](https://ak.cheapproxy.net/dashboard/akshare) 获取。
 
 工作原理：东财请求**始终先尝试直连**，只有直连失败（RemoteDisconnected / IP 封禁）时才 fallback 到代理（curl_cffi 浏览器指纹 + 轮换代理 IP + Cookie）。其他数据源（腾讯、新浪、同花顺等）不受影响。
 

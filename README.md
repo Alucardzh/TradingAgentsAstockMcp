@@ -155,10 +155,13 @@ When running multi-agent batch analysis, Eastmoney may temporarily ban your IP (
    uv sync --extra proxy
    ```
 
-2. Set the token in your environment (or `.env`):
+2. Copy the env template and fill in your token:
    ```bash
-   export AKPROXY_TOKEN=your-token-here
+   cp env.template .env
+   # Edit .env: AKPROXY_TOKEN=your-token
    ```
+
+   Get your token from [ak.cheapproxy.net/dashboard/akshare](https://ak.cheapproxy.net/dashboard/akshare).
 
 How it works: Eastmoney requests **always try direct connection first**. Only when direct fails (RemoteDisconnected / IP ban) does it fallback to the proxy (curl_cffi browser fingerprinting + rotating proxy IP + cookie). Other data sources (Tencent, Sina, THS, etc.) are unaffected.
 
