@@ -144,6 +144,23 @@ src/a_stock_mcp/
 | `ASTOCK_CACHE_DIR` | `~/.astock-mcp/cache` | K 线 CSV 缓存、北向资金日缓存、巨潮 orgId 映射缓存目录 |
 | `EM_MIN_INTERVAL` | `1.0`（秒） | 东方财富 API 最小请求间隔。多代理批量场景建议调至 1.5–2.0 |
 | `CNINFO_MIN_INTERVAL` | `1.0`（秒） | 巨潮资讯网 API 最小请求间隔 |
+| `AKPROXY_TOKEN` | *(空)* | 可选。设置后，东财直连失败（IP 封禁）时自动 fallback 到代理（浏览器指纹模拟 + 轮换 IP）。需先 `uv sync --extra proxy` |
+
+### 可选：东财反封代理
+
+多 Agent 批量分析时，东方财富可能临时封禁 IP（症状：所有 `push2.eastmoney.com` 端点返回 `RemoteDisconnected`）。配置自动代理 fallback：
+
+1. 安装可选代理依赖：
+   ```bash
+   uv sync --extra proxy
+   ```
+
+2. 在环境变量或 `.env` 中设置 token：
+   ```bash
+   export AKPROXY_TOKEN=你的token
+   ```
+
+工作原理：东财请求**始终先尝试直连**，只有直连失败（RemoteDisconnected / IP 封禁）时才 fallback 到代理（curl_cffi 浏览器指纹 + 轮换代理 IP + Cookie）。其他数据源（腾讯、新浪、同花顺等）不受影响。
 
 ## 开发
 

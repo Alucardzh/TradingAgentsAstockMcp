@@ -144,6 +144,23 @@ src/a_stock_mcp/
 | `ASTOCK_CACHE_DIR` | `~/.astock-mcp/cache` | Directory for OHLCV CSV cache, northbound daily cache, and cninfo orgId map |
 | `EM_MIN_INTERVAL` | `1.0` (seconds) | Minimum interval between Eastmoney API requests. Increase to 1.5–2.0 for multi-agent batch scenarios |
 | `CNINFO_MIN_INTERVAL` | `1.0` (seconds) | Minimum interval between Cninfo (巨潮资讯网) API requests |
+| `AKPROXY_TOKEN` | *(empty)* | Optional. When set, direct Eastmoney connection failures (IP ban) automatically fallback to proxy with browser-fingerprint spoofing. Requires `uv sync --extra proxy` |
+
+### Optional: Eastmoney Proxy (Anti-Ban)
+
+When running multi-agent batch analysis, Eastmoney may temporarily ban your IP (symptom: `RemoteDisconnected` on all `push2.eastmoney.com` endpoints). To set up automatic proxy fallback:
+
+1. Install the optional proxy dependency:
+   ```bash
+   uv sync --extra proxy
+   ```
+
+2. Set the token in your environment (or `.env`):
+   ```bash
+   export AKPROXY_TOKEN=your-token-here
+   ```
+
+How it works: Eastmoney requests **always try direct connection first**. Only when direct fails (RemoteDisconnected / IP ban) does it fallback to the proxy (curl_cffi browser fingerprinting + rotating proxy IP + cookie). Other data sources (Tencent, Sina, THS, etc.) are unaffected.
 
 ## Development
 

@@ -31,6 +31,98 @@ import requests as _requests
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# 可选：东财代理 fallback（当 AKPROXY_TOKEN 非空且 curl_cffi 已安装时启用）
+# 直连东财失败（RemoteDisconnected / IP 封禁）时，自动 fallback 到代理：
+#   curl_cffi 浏览器指纹 + 轮换代理 IP + Cookie 绕过风控。
+# 安装：pip install curl_cffi （或 uv sync --extra proxy）
+# ---------------------------------------------------------------------------
+_AKPROXY_TOKEN = os.environ.get("AKPROXY_TOKEN", "")
+_AKPROXY_IP = os.environ.get("AKPROXY_IP", "101.201.173.125")
+_AKPROXY_AVAILABLE = False
+
+if _AKPROXY_TOKEN:
+    try:
+        from curl_cffi import requests as _cffi_requests
+        from curl_cffi.requests import BrowserType as _BrowserType
+
+        _AKPROXY_BROWSERS = [
+            b
+            for b in _BrowserType.__dict__.values()
+            if isinstance(b, str) and (b.startswith("chrome") or b.startswith("edge"))
+        ]
+        _AKPROXY_AVAILABLE = True
+        logger.info("AKPROXY_TOKEN detected — Eastmoney proxy fallback enabled")
+    except ImportError:
+        logger.warning(
+            "AKPROXY_TOKEN set but curl_cffi not installed. "
+            "Install with: uv sync --extra proxy"
+        )
+
+# Proxy auth cache (refreshed every 28s, same as akshare_proxy_patch)
+_proxy_auth_cache: dict | None = None
+_proxy_auth_expire: float = 0.0
+
+
+def _get_proxy_auth() -> dict | None:
+    """Fetch proxy config (cookie + proxy URL) from akshare-proxy auth server."""
+    global _proxy_auth_cache, _proxy_auth_expire
+    now = time.time()
+    if _proxy_auth_cache and now < _proxy_auth_expire:
+        return _proxy_auth_cache
+    try:
+        auth_url = f"http://{_AKPROXY_IP}:47001/api/akshare-auth"
+        r = _requests.get(auth_url, params={"token": _AKPROXY_TOKEN, "version": "0.5.0"}, timeout=(1.5, 3))
+        data = r.json()
+        if data.get("ua"):
+            _proxy_auth_cache = data
+            _proxy_auth_expire = now + 28
+            return data
+        logger.warning("AKProxy auth failed: %s", data.get("error_msg", "unknown"))
+    except Exception:
+        pass
+    return _proxy_auth_cache  # may be stale or None
+
+
+def _em_proxy_get(url, params=None, headers=None, timeout=15, max_retries=5):
+    """Fallback: fetch an Eastmoney URL via curl_cffi proxy when direct connection is banned.
+
+    Uses browser fingerprint spoofing + rotating proxy IP + cookie from the
+    akshare-proxy auth server. Mirrors the core logic of akshare_proxy_patch
+    but as an explicit fallback (not a global monkey-patch).
+    """
+    for attempt in range(max_retries):
+        auth = _get_proxy_auth()
+        if not auth:
+            time.sleep(0.1)
+            continue
+
+        merged_headers = dict(headers or {})
+        merged_headers["Cookie"] = auth.get("cookie", "")
+        proxy_url = auth.get("proxy", "")
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+        try:
+            with _cffi_requests.Session() as s:
+                resp = s.get(
+                    url,
+                    params=params,
+                    headers=merged_headers,
+                    proxies=proxies,
+                    timeout=timeout,
+                    impersonate=random.choice(_AKPROXY_BROWSERS),
+                )
+                if resp.status_code == 200:
+                    return resp
+                logger.warning("AKProxy attempt %d: HTTP %d", attempt + 1, resp.status_code)
+        except Exception as e:
+            logger.warning("AKProxy attempt %d failed: %s", attempt + 1, e)
+        # Invalidate auth cache on failure
+        _proxy_auth_expire = 0.0
+        time.sleep(0.1)
+
+    raise _requests.exceptions.ConnectionError(f"AKProxy fallback exhausted after {max_retries} retries for {url}")
+
 # Cache directory (overridable via ASTOCK_CACHE_DIR env var)
 _CACHE_DIR = os.environ.get(
     "ASTOCK_CACHE_DIR",
@@ -305,18 +397,31 @@ def _em_get(url, params=None, headers=None, timeout=15, **kwargs):
     所有 eastmoney.com 接口都应通过它请求，避免多 Agent 高频拉数据被封 IP。
     串行限流：与上次东财请求间隔 < EM_MIN_INTERVAL 时 sleep 补足 + 0.1~0.5s 随机抖动。
     传入的 headers 会覆盖 session 默认 UA（用于保留各端点自己的 Referer/Origin）。
-    首次连接失败自动重试 1 次（应对 RemoteDisconnected / ConnectionError）。
+    直连失败时：先重试 1 次，仍失败则尝试 AKProxy 代理 fallback（需配置 AKPROXY_TOKEN）。
     """
     wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
     if wait > 0:
         time.sleep(wait + random.uniform(0.1, 0.5))
+
+    # --- 直连 ---
     try:
         return _EM_SESSION.get(url, params=params, headers=headers, timeout=timeout, **kwargs)
     except (_requests.exceptions.ConnectionError, _requests.exceptions.ChunkedEncodingError):
-        # Transient network error — retry once after short delay
-        logger.warning("东财请求瞬态失败，1s 后重试: %s", url)
+        logger.warning("东财直连失败，1s 后重试: %s", url)
         time.sleep(1)
-        return _EM_SESSION.get(url, params=params, headers=headers, timeout=timeout, **kwargs)
+        try:
+            return _EM_SESSION.get(url, params=params, headers=headers, timeout=timeout, **kwargs)
+        except (_requests.exceptions.ConnectionError, _requests.exceptions.ChunkedEncodingError):
+            # --- 直连彻底失败，尝试代理 fallback ---
+            if _AKPROXY_AVAILABLE:
+                logger.warning("东财直连仍失败，切换到 AKProxy 代理: %s", url)
+                try:
+                    resp = _em_proxy_get(url, params=params, headers=headers, timeout=timeout)
+                    _em_last_call[0] = time.time()
+                    return resp
+                except Exception:
+                    pass  # fall through to re-raise original error
+            raise
     finally:
         _em_last_call[0] = time.time()
 
